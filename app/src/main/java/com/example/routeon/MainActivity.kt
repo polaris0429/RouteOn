@@ -30,6 +30,9 @@ import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.KNGuide_Safety
 import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.objects.KNSafety
 import com.kakaomobility.knsdk.guidance.knguidance.voiceguide.KNGuide_Voice
 import com.kakaomobility.knsdk.trip.kntrip.knroute.KNRoute
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : AppCompatActivity(),
     KNGuidance_GuideStateDelegate,
@@ -44,10 +47,27 @@ class MainActivity : AppCompatActivity(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 💡 1. KNSDK 설치를 가장 먼저 실행합니다.
         KNSDK.install(application, "$filesDir/knsdk")
+
+        // 💡 2. 화면(뷰 바인딩)을 '먼저' 그립니다. (크기 계산 보장)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // 💡 3. 화면이 다 그려진 후(post) 전체 화면(Immersive Mode) 모드를 적용합니다.
+        binding.root.post {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            val controller = WindowCompat.getInsetsController(window, binding.root)
+
+            // 상단 상태바, 하단 네비게이션 바 모두 숨김 처리
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+
+            // 스와이프하면 잠깐 나타났다가 다시 숨겨지는 설정
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+
+        // 💡 4. 모든 UI 셋팅이 끝난 후 권한 확인 및 내비 시작!
         checkLocationPermission()
     }
 
@@ -108,23 +128,25 @@ class MainActivity : AppCompatActivity(),
                     Log.e("KNSDK", "🚨 경로 요청 실패: ${error.msg}")
                 } else {
                     runOnUiThread {
-                        val guidance = KNSDK.sharedGuidance()
-                        guidance?.apply {
-                            guideStateDelegate = this@MainActivity
-                            locationGuideDelegate = this@MainActivity
-                            routeGuideDelegate = this@MainActivity
-                            safetyGuideDelegate = this@MainActivity
-                            voiceGuideDelegate = this@MainActivity
-                            citsGuideDelegate = this@MainActivity
+                        binding.naviView.post {
+                            val guidance = KNSDK.sharedGuidance()
+                            guidance?.apply {
+                                guideStateDelegate = this@MainActivity
+                                locationGuideDelegate = this@MainActivity
+                                routeGuideDelegate = this@MainActivity
+                                safetyGuideDelegate = this@MainActivity
+                                voiceGuideDelegate = this@MainActivity
+                                citsGuideDelegate = this@MainActivity
 
-                            binding.naviView.mapComponent.mapView.isVisibleTraffic = true
+                                binding.naviView.mapComponent.mapView.isVisibleTraffic = true
 
-                            binding.naviView.initWithGuidance(
-                                this,
-                                aTrip,
-                                curRoutePriority,
-                                curAvoidOptions
-                            )
+                                binding.naviView.initWithGuidance(
+                                    this,
+                                    aTrip,
+                                    curRoutePriority,
+                                    curAvoidOptions
+                                )
+                            }
                         }
                     }
                 }
@@ -132,113 +154,76 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) {
-        TODO("Not yet implemented")
-    }
-
-    override fun guidanceDidUpdateIndoorRoute(
-        aGuidance: KNGuidance,
-        aRoute: KNRoute?
-    ) {
-        TODO("Not yet implemented")
-    }
-
-    override fun guidanceDidUpdateRoutes(
-        aGuidance: KNGuidance,
-        aRoutes: List<KNRoute>,
-        aMultiRouteInfo: KNMultiRouteInfo?
-    ) {
-        TODO("Not yet implemented")
-    }
-
-    override fun guidanceGuideEnded(aGuidance: KNGuidance) {
-        TODO("Not yet implemented")
-    }
+    // =========================================================================
+    // 💡 델리게이트 구현부 (화면에 주행 정보를 실시간으로 그려주는 역할)
+    // =========================================================================
 
     override fun guidanceGuideStarted(aGuidance: KNGuidance) {
-        TODO("Not yet implemented")
+        binding.naviView.guidanceGuideStarted(aGuidance)
     }
 
-    override fun guidanceOutOfRoute(aGuidance: KNGuidance) {
-        TODO("Not yet implemented")
-    }
-
-    override fun guidanceRouteChanged(
-        aGuidance: KNGuidance,
-        aFromRoute: KNRoute,
-        aFromLocation: KNLocation,
-        aToRoute: KNRoute,
-        aToLocation: KNLocation,
-        aChangeReason: KNGuideRouteChangeReason
-    ) {
-        TODO("Not yet implemented")
+    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) {
+        binding.naviView.guidanceCheckingRouteChange(aGuidance)
     }
 
     override fun guidanceRouteUnchanged(aGuidance: KNGuidance) {
-        TODO("Not yet implemented")
+        binding.naviView.guidanceRouteUnchanged(aGuidance)
     }
 
-    override fun guidanceRouteUnchangedWithError(
-        aGuidnace: KNGuidance,
-        aError: KNError
-    ) {
-        TODO("Not yet implemented")
+    override fun guidanceRouteUnchangedWithError(aGuidnace: KNGuidance, aError: KNError) {
+        binding.naviView.guidanceRouteUnchangedWithError(aGuidnace, aError)
     }
 
-    override fun guidanceDidUpdateLocation(
-        aGuidance: KNGuidance,
-        aLocationGuide: KNGuide_Location
-    ) {
-        TODO("Not yet implemented")
+    override fun guidanceOutOfRoute(aGuidance: KNGuidance) {
+        binding.naviView.guidanceOutOfRoute(aGuidance)
     }
 
-    override fun guidanceDidUpdateRouteGuide(
-        aGuidance: KNGuidance,
-        aRouteGuide: KNGuide_Route
-    ) {
-        TODO("Not yet implemented")
+    // 이 함수는 naviView 연동 지원을 하지 않으므로 비워둡니다.
+    override fun guidanceRouteChanged(aGuidance: KNGuidance, aFromRoute: KNRoute, aFromLocation: KNLocation, aToRoute: KNRoute, aToLocation: KNLocation, aChangeReason: KNGuideRouteChangeReason) {
     }
 
-    override fun guidanceDidUpdateAroundSafeties(
-        aGuidance: KNGuidance,
-        aSafeties: List<KNSafety>?
-    ) {
-        TODO("Not yet implemented")
+    override fun guidanceGuideEnded(aGuidance: KNGuidance) {
+        binding.naviView.guidanceGuideEnded(aGuidance)
     }
 
-    override fun guidanceDidUpdateSafetyGuide(
-        aGuidance: KNGuidance,
-        aSafetyGuide: KNGuide_Safety?
-    ) {
-        TODO("Not yet implemented")
+    override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) {
+        binding.naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo)
     }
 
-    override fun didFinishPlayVoiceGuide(
-        aGuidance: KNGuidance,
-        aVoiceGuide: KNGuide_Voice
-    ) {
-        TODO("Not yet implemented")
+    // 이 함수는 naviView 연동 지원을 하지 않으므로 비워둡니다.
+    override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {
     }
 
-    override fun shouldPlayVoiceGuide(
-        aGuidance: KNGuidance,
-        aVoiceGuide: KNGuide_Voice,
-        aNewData: MutableList<ByteArray>
-    ): Boolean {
-        TODO("Not yet implemented")
+    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) {
+        binding.naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide)
     }
 
-    override fun willPlayVoiceGuide(
-        aGuidance: KNGuidance,
-        aVoiceGuide: KNGuide_Voice
-    ) {
-        TODO("Not yet implemented")
+    override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) {
+        binding.naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide)
     }
 
-    override fun didUpdateCitsGuide(
-        aGuidance: KNGuidance,
-        aCitsGuide: KNGuide_Cits
-    ) {
-        TODO("Not yet implemented")
+    override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) {
+        binding.naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide)
+    }
+
+    override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<KNSafety>?) {
+        binding.naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties)
+    }
+
+    // 💡 에러의 원인이었던 함수! return 키워드를 넣어 값을 반환합니다.
+    override fun shouldPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice, aNewData: MutableList<ByteArray>): Boolean {
+        return binding.naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData)
+    }
+
+    override fun willPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
+        binding.naviView.willPlayVoiceGuide(aGuidance, aVoiceGuide)
+    }
+
+    override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
+        binding.naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide)
+    }
+
+    override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) {
+        binding.naviView.didUpdateCitsGuide(aGuidance, aCitsGuide)
     }
 }
