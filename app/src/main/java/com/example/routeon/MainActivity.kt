@@ -1,15 +1,18 @@
 package com.example.routeon
 
-// 💡 델리게이트 임포트 (Alt+Enter로 자동완성 될 것입니다)
+// 💡 새로 추가된 차량 정보 및 연료 타입 임포트
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.routeon.databinding.ActivityMainBinding
+import com.kakaomobility.knsdk.KNCarFuel
+import com.kakaomobility.knsdk.KNCarType
 import com.kakaomobility.knsdk.KNSDK
 import com.kakaomobility.knsdk.common.objects.KNError
 import com.kakaomobility.knsdk.common.objects.KNPOI
@@ -30,9 +33,7 @@ import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.KNGuide_Safety
 import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.objects.KNSafety
 import com.kakaomobility.knsdk.guidance.knguidance.voiceguide.KNGuide_Voice
 import com.kakaomobility.knsdk.trip.kntrip.knroute.KNRoute
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
+import com.kakaomobility.knsdk.ui.view.KNNaviView
 
 class MainActivity : AppCompatActivity(),
     KNGuidance_GuideStateDelegate,
@@ -43,32 +44,94 @@ class MainActivity : AppCompatActivity(),
     KNGuidance_CitsGuideDelegate {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var naviView: KNNaviView
     private val LOCATION_PERMISSION_REQUEST_CODE = 1000
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 💡 1. KNSDK 설치를 가장 먼저 실행합니다.
+        // SDK 필수 폴더 셋팅
         KNSDK.install(application, "$filesDir/knsdk")
 
-        // 💡 2. 화면(뷰 바인딩)을 '먼저' 그립니다. (크기 계산 보장)
+        // 화면 그리기
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // 💡 3. 화면이 다 그려진 후(post) 전체 화면(Immersive Mode) 모드를 적용합니다.
-        binding.root.post {
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            val controller = WindowCompat.getInsetsController(window, binding.root)
+        // UI 이벤트 셋팅
+        setupBottomNavigation()
+        setupSettingsUI()
+        setupRunListUI()
 
-            // 상단 상태바, 하단 네비게이션 바 모두 숨김 처리
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+        // 권한 확인 및 내비게이션 초기화 시작
+        checkLocationPermission()
+    }
 
-            // 스와이프하면 잠깐 나타났다가 다시 숨겨지는 설정
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    // 1. 하단 메뉴 전환 로직 (화면 끄고 켜기)
+    private fun setupBottomNavigation() {
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_map -> {
+                    binding.runListView.visibility = View.GONE
+                    binding.settingsView.visibility = View.GONE
+                    true
+                }
+                R.id.nav_list -> {
+                    binding.runListView.visibility = View.VISIBLE
+                    binding.settingsView.visibility = View.GONE
+                    true
+                }
+                R.id.nav_settings -> {
+                    binding.runListView.visibility = View.GONE
+                    binding.settingsView.visibility = View.VISIBLE
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    // 2. 운행목록에서 안내 버튼 누를 때 로직
+    private fun setupRunListUI() {
+        binding.btnGo1.setOnClickListener {
+            // 버튼을 누르면 목표 좌표를 생성하고 길찾기 시작!
+            val goal = KNPOI("카카오 판교아지트", 321286, 532843, "경기 성남시 분당구 판교역로 166")
+            startNavigation(goal)
+
+            // 길찾기 시작과 동시에 하단 메뉴를 '내비'로 강제 이동시킵니다.
+            binding.bottomNav.selectedItemId = R.id.nav_map
+        }
+    }
+
+    // 3. 설정 탭 옵션 변경 시 내비게이션 엔진에 즉각 반영하는 로직
+    private fun setupSettingsUI() {
+        // 다크 모드(야간 맵) 토글
+        binding.switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
+            if (::naviView.isInitialized) {
+                naviView.useDarkMode = isChecked
+            }
         }
 
-        // 💡 4. 모든 UI 셋팅이 끝난 후 권한 확인 및 내비 시작!
-        checkLocationPermission()
+        // 연료 타입 변경
+        binding.rgFuel.setOnCheckedChangeListener { _, checkedId ->
+            if (!::naviView.isInitialized) return@setOnCheckedChangeListener
+            naviView.fuelType = when (checkedId) {
+                R.id.rb_fuel_gasoline -> KNCarFuel.KNCarFuel_Gasoline
+                R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
+                R.id.rb_fuel_electric -> KNCarFuel.KNCarFuel_Electric
+                else -> KNCarFuel.KNCarFuel_Gasoline
+            }
+        }
+
+        // 차종 변경
+        binding.rgCarType.setOnCheckedChangeListener { _, checkedId ->
+            if (!::naviView.isInitialized) return@setOnCheckedChangeListener
+            naviView.carType = when (checkedId) {
+                R.id.rb_car_type_1 -> KNCarType.KNCarType_1
+                R.id.rb_car_type_4 -> KNCarType.KNCarType_4
+                R.id.rb_car_type_bike -> KNCarType.KNCarType_Bike
+                else -> KNCarType.KNCarType_1
+            }
+        }
     }
 
     private fun checkLocationPermission() {
@@ -100,47 +163,60 @@ class MainActivity : AppCompatActivity(),
             aAppUserId = "test_user",
             aLangType = com.kakaomobility.knsdk.KNLanguageType.KNLanguageType_KOREAN,
             aCompletion = { error ->
-                if (error != null) {
-                    Log.e("KNSDK", "🚨 초기화 실패: ${error.msg}")
-                } else {
-                    Log.d("KNSDK", "✅ 카카오 SDK 인증 성공! 길안내를 시작합니다.")
-                    startNavigation()
+                if (error == null) {
+                    runOnUiThread {
+                        naviView = KNNaviView(this@MainActivity)
+                        binding.naviContainer.addView(naviView)
+
+                        // 앱을 켜면 일단 목적지 없이 '안전운행 모드' 지도를 띄워둡니다.
+                        startSafeDriving()
+                    }
                 }
             }
         )
     }
 
-    private fun startNavigation() {
-        val start = KNPOI("강남역", 314328, 544280, "서울 강남구 강남대로 396")
-        val goal = KNPOI("카카오 판교아지트", 321286, 532843, "경기 성남시 분당구 판교역로 166")
+    // 델리게이트 연결을 간편하게 해주는 도우미 함수
+    private fun setupDelegates(guidance: KNGuidance) {
+        guidance.guideStateDelegate = this
+        guidance.locationGuideDelegate = this
+        guidance.routeGuideDelegate = this
+        guidance.safetyGuideDelegate = this
+        guidance.voiceGuideDelegate = this
+        guidance.citsGuideDelegate = this
+        naviView.mapComponent.mapView.isVisibleTraffic = true
+    }
+
+    // 초기 상태: 목적지 없는 안전운행 모드
+    private fun startSafeDriving() {
+        val guidance = KNSDK.sharedGuidance()
+        guidance?.apply {
+            setupDelegates(this)
+            naviView.initWithGuidance(
+                this,
+                null,
+                com.kakaomobility.knsdk.KNRoutePriority.KNRoutePriority_Recommand,
+                com.kakaomobility.knsdk.KNRouteAvoidOption.KNRouteAvoidOption_None.value
+            )
+        }
+    }
+
+    // 안내 시작 버튼 클릭 시 호출: 특정 목적지로 길찾기 모드
+    private fun startNavigation(goal: KNPOI) {
+        val start = KNPOI("현재위치", 314328, 544280, "") // 강남역 임시 기준
 
         KNSDK.makeTripWithStart(start, goal, null) { aError, aTrip ->
-            if (aError != null || aTrip == null) {
-                Log.e("KNSDK", "🚨 경로 생성 실패: ${aError?.msg}")
-                return@makeTripWithStart
-            }
+            if (aTrip != null) {
+                val curRoutePriority = com.kakaomobility.knsdk.KNRoutePriority.KNRoutePriority_Recommand
+                val curAvoidOptions = com.kakaomobility.knsdk.KNRouteAvoidOption.KNRouteAvoidOption_None.value
 
-            val curRoutePriority = com.kakaomobility.knsdk.KNRoutePriority.KNRoutePriority_Recommand
-            val curAvoidOptions = com.kakaomobility.knsdk.KNRouteAvoidOption.KNRouteAvoidOption_None.value
-
-            aTrip.routeWithPriority(curRoutePriority, curAvoidOptions) { error, _ ->
-                if (error != null) {
-                    Log.e("KNSDK", "🚨 경로 요청 실패: ${error.msg}")
-                } else {
-                    runOnUiThread {
-                        binding.naviView.post {
+                aTrip.routeWithPriority(curRoutePriority, curAvoidOptions) { error, _ ->
+                    if (error == null) {
+                        runOnUiThread {
                             val guidance = KNSDK.sharedGuidance()
                             guidance?.apply {
-                                guideStateDelegate = this@MainActivity
-                                locationGuideDelegate = this@MainActivity
-                                routeGuideDelegate = this@MainActivity
-                                safetyGuideDelegate = this@MainActivity
-                                voiceGuideDelegate = this@MainActivity
-                                citsGuideDelegate = this@MainActivity
-
-                                binding.naviView.mapComponent.mapView.isVisibleTraffic = true
-
-                                binding.naviView.initWithGuidance(
+                                setupDelegates(this)
+                                naviView.initWithGuidance(
                                     this,
                                     aTrip,
                                     curRoutePriority,
@@ -155,75 +231,23 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 💡 델리게이트 구현부 (화면에 주행 정보를 실시간으로 그려주는 역할)
+    // 💡 필수 델리게이트 인터페이스 구현부
     // =========================================================================
-
-    override fun guidanceGuideStarted(aGuidance: KNGuidance) {
-        binding.naviView.guidanceGuideStarted(aGuidance)
-    }
-
-    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) {
-        binding.naviView.guidanceCheckingRouteChange(aGuidance)
-    }
-
-    override fun guidanceRouteUnchanged(aGuidance: KNGuidance) {
-        binding.naviView.guidanceRouteUnchanged(aGuidance)
-    }
-
-    override fun guidanceRouteUnchangedWithError(aGuidnace: KNGuidance, aError: KNError) {
-        binding.naviView.guidanceRouteUnchangedWithError(aGuidnace, aError)
-    }
-
-    override fun guidanceOutOfRoute(aGuidance: KNGuidance) {
-        binding.naviView.guidanceOutOfRoute(aGuidance)
-    }
-
-    // 이 함수는 naviView 연동 지원을 하지 않으므로 비워둡니다.
-    override fun guidanceRouteChanged(aGuidance: KNGuidance, aFromRoute: KNRoute, aFromLocation: KNLocation, aToRoute: KNRoute, aToLocation: KNLocation, aChangeReason: KNGuideRouteChangeReason) {
-    }
-
-    override fun guidanceGuideEnded(aGuidance: KNGuidance) {
-        binding.naviView.guidanceGuideEnded(aGuidance)
-    }
-
-    override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) {
-        binding.naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo)
-    }
-
-    // 이 함수는 naviView 연동 지원을 하지 않으므로 비워둡니다.
-    override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {
-    }
-
-    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) {
-        binding.naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide)
-    }
-
-    override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) {
-        binding.naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide)
-    }
-
-    override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) {
-        binding.naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide)
-    }
-
-    override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<KNSafety>?) {
-        binding.naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties)
-    }
-
-    // 💡 에러의 원인이었던 함수! return 키워드를 넣어 값을 반환합니다.
-    override fun shouldPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice, aNewData: MutableList<ByteArray>): Boolean {
-        return binding.naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData)
-    }
-
-    override fun willPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
-        binding.naviView.willPlayVoiceGuide(aGuidance, aVoiceGuide)
-    }
-
-    override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
-        binding.naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide)
-    }
-
-    override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) {
-        binding.naviView.didUpdateCitsGuide(aGuidance, aCitsGuide)
-    }
+    override fun guidanceGuideStarted(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceGuideStarted(aGuidance) }
+    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceCheckingRouteChange(aGuidance) }
+    override fun guidanceRouteUnchanged(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceRouteUnchanged(aGuidance) }
+    override fun guidanceRouteUnchangedWithError(aGuidnace: KNGuidance, aError: KNError) { if (::naviView.isInitialized) naviView.guidanceRouteUnchangedWithError(aGuidnace, aError) }
+    override fun guidanceOutOfRoute(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceOutOfRoute(aGuidance) }
+    override fun guidanceRouteChanged(aGuidance: KNGuidance, aFromRoute: KNRoute, aFromLocation: KNLocation, aToRoute: KNRoute, aToLocation: KNLocation, aChangeReason: KNGuideRouteChangeReason) {}
+    override fun guidanceGuideEnded(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceGuideEnded(aGuidance) }
+    override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo) }
+    override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {}
+    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) { if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide) }
+    override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide) }
+    override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide) }
+    override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<KNSafety>?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties) }
+    override fun shouldPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice, aNewData: MutableList<ByteArray>): Boolean { return if (::naviView.isInitialized) naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false }
+    override fun willPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) { if (::naviView.isInitialized) naviView.willPlayVoiceGuide(aGuidance, aVoiceGuide) }
+    override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) { if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
+    override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) { if (::naviView.isInitialized) naviView.didUpdateCitsGuide(aGuidance, aCitsGuide) }
 }
