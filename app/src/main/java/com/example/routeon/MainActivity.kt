@@ -20,6 +20,16 @@ import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_LocationGuideDeleg
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_RouteGuideDelegate
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_SafetyGuideDelegate
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_VoiceGuideDelegate
+import com.kakaomobility.knsdk.guidance.knguidance.KNGuideRouteChangeReason
+import com.kakaomobility.knsdk.guidance.knguidance.citsguide.KNGuide_Cits
+import com.kakaomobility.knsdk.guidance.knguidance.common.KNLocation
+import com.kakaomobility.knsdk.guidance.knguidance.locationguide.KNGuide_Location
+import com.kakaomobility.knsdk.guidance.knguidance.routeguide.KNGuide_Route
+import com.kakaomobility.knsdk.guidance.knguidance.routeguide.objects.KNMultiRouteInfo
+import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.KNGuide_Safety
+import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.objects.KNSafety
+import com.kakaomobility.knsdk.guidance.knguidance.voiceguide.KNGuide_Voice
+import com.kakaomobility.knsdk.trip.kntrip.knroute.KNRoute
 
 class MainActivity : AppCompatActivity(),
     KNGuidance_GuideStateDelegate,
@@ -122,60 +132,113 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // =========================================================================
-    // 💡 5. 최신 SDK(1.12.7) 규격에 완벽하게 맞춘 델리게이트 구현부
-    // =========================================================================
-
-    override fun guidanceGuideStarted(aGuidance: KNGuidance) { binding.naviView.guidanceGuideStarted(aGuidance) }
-    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) { binding.naviView.guidanceCheckingRouteChange(aGuidance) }
-    override fun guidanceRouteUnchanged(aGuidance: KNGuidance) { binding.naviView.guidanceRouteUnchanged(aGuidance) }
-    override fun guidanceRouteUnchangedWithError(aGuidance: KNGuidance, aError: KNError) { binding.naviView.guidanceRouteUnchangedWithError(aGuidance, aError) }
-    override fun guidanceOutOfRoute(aGuidance: KNGuidance) { binding.naviView.guidanceOutOfRoute(aGuidance) }
-    override fun guidanceGuideEnded(aGuidance: KNGuidance) { binding.naviView.guidanceGuideEnded(aGuidance) }
-
-    // 파라미터가 최신화된 함수들 (naviView 내부 함수와 파라미터가 안 맞으면 에러나므로 주석처리 등 안전장치 적용)
-    override fun guidanceRouteChanged(aGuidance: KNGuidance, aFromRoute: com.kakaomobility.knsdk.common.objects.KNRoute, aFromLocation: com.kakaomobility.knsdk.common.objects.KNLocation, aToRoute: com.kakaomobility.knsdk.common.objects.KNRoute, aToLocation: com.kakaomobility.knsdk.common.objects.KNLocation, aChangeReason: com.kakaomobility.knsdk.guidance.KNGuideRouteChangeReason) {
-        // UI 반영
+    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) {
+        TODO("Not yet implemented")
     }
 
-    override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<com.kakaomobility.knsdk.common.objects.KNRoute>, aMultiRouteInfo: com.kakaomobility.knsdk.guidance.routeinfo.KNMultiRouteInfo?) {
-        // UI 반영
+    override fun guidanceDidUpdateIndoorRoute(
+        aGuidance: KNGuidance,
+        aRoute: KNRoute?
+    ) {
+        TODO("Not yet implemented")
     }
 
-    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: com.kakaomobility.knsdk.guidance.routeinfo.KNGuide_Location) {
-        binding.naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide)
+    override fun guidanceDidUpdateRoutes(
+        aGuidance: KNGuidance,
+        aRoutes: List<KNRoute>,
+        aMultiRouteInfo: KNMultiRouteInfo?
+    ) {
+        TODO("Not yet implemented")
     }
 
-    override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: com.kakaomobility.knsdk.guidance.routeinfo.KNGuide_Route) {
-        binding.naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide)
+    override fun guidanceGuideEnded(aGuidance: KNGuidance) {
+        TODO("Not yet implemented")
     }
 
-    override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: com.kakaomobility.knsdk.guidance.routeinfo.KNGuide_Safety?) {
-        binding.naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide)
+    override fun guidanceGuideStarted(aGuidance: KNGuidance) {
+        TODO("Not yet implemented")
     }
 
-    override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<com.kakaomobility.knsdk.guidance.routeinfo.KNSafety>?) {
-        binding.naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties)
+    override fun guidanceOutOfRoute(aGuidance: KNGuidance) {
+        TODO("Not yet implemented")
     }
 
-    override fun shouldPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: com.kakaomobility.knsdk.guidance.routeinfo.KNGuide_Voice, aNewData: MutableList<ByteArray>): Boolean {
-        return binding.naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData)
+    override fun guidanceRouteChanged(
+        aGuidance: KNGuidance,
+        aFromRoute: KNRoute,
+        aFromLocation: KNLocation,
+        aToRoute: KNRoute,
+        aToLocation: KNLocation,
+        aChangeReason: KNGuideRouteChangeReason
+    ) {
+        TODO("Not yet implemented")
     }
 
-    override fun willPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: com.kakaomobility.knsdk.guidance.routeinfo.KNGuide_Voice) {
-        binding.naviView.willPlayVoiceGuide(aGuidance, aVoiceGuide)
+    override fun guidanceRouteUnchanged(aGuidance: KNGuidance) {
+        TODO("Not yet implemented")
     }
 
-    override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: com.kakaomobility.knsdk.guidance.routeinfo.KNGuide_Voice) {
-        binding.naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide)
+    override fun guidanceRouteUnchangedWithError(
+        aGuidnace: KNGuidance,
+        aError: KNError
+    ) {
+        TODO("Not yet implemented")
     }
 
-    override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: com.kakaomobility.knsdk.guidance.routeinfo.KNGuide_Cits) {
-        binding.naviView.didUpdateCitsGuide(aGuidance, aCitsGuide)
+    override fun guidanceDidUpdateLocation(
+        aGuidance: KNGuidance,
+        aLocationGuide: KNGuide_Location
+    ) {
+        TODO("Not yet implemented")
     }
 
-    // 💡 최신 버전에 새롭게 추가된 필수 함수
-    override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: com.kakaomobility.knsdk.common.objects.KNRoute?) {
-        // 실내 경로 업데이트 시 호출됨
+    override fun guidanceDidUpdateRouteGuide(
+        aGuidance: KNGuidance,
+        aRouteGuide: KNGuide_Route
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override fun guidanceDidUpdateAroundSafeties(
+        aGuidance: KNGuidance,
+        aSafeties: List<KNSafety>?
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override fun guidanceDidUpdateSafetyGuide(
+        aGuidance: KNGuidance,
+        aSafetyGuide: KNGuide_Safety?
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override fun didFinishPlayVoiceGuide(
+        aGuidance: KNGuidance,
+        aVoiceGuide: KNGuide_Voice
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override fun shouldPlayVoiceGuide(
+        aGuidance: KNGuidance,
+        aVoiceGuide: KNGuide_Voice,
+        aNewData: MutableList<ByteArray>
+    ): Boolean {
+        TODO("Not yet implemented")
+    }
+
+    override fun willPlayVoiceGuide(
+        aGuidance: KNGuidance,
+        aVoiceGuide: KNGuide_Voice
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override fun didUpdateCitsGuide(
+        aGuidance: KNGuidance,
+        aCitsGuide: KNGuide_Cits
+    ) {
+        TODO("Not yet implemented")
     }
 }
