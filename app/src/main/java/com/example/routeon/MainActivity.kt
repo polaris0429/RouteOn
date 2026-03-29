@@ -18,11 +18,8 @@ import com.example.routeon.databinding.ActivityMainBinding
 import com.kakaomobility.knsdk.KNSDK
 import com.kakaomobility.knsdk.common.objects.KNError
 import com.kakaomobility.knsdk.common.objects.KNPOI
-
-// 💡 SDK 최신 버전에 맞춘 연료/차종 경로
 import com.kakaomobility.knsdk.KNCarFuel
 import com.kakaomobility.knsdk.KNCarType
-
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_CitsGuideDelegate
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_GuideStateDelegate
@@ -102,11 +99,35 @@ class MainActivity : AppCompatActivity(),
     }
 
     private fun setupRunListUI() {
-        binding.btnGo1.setOnClickListener {
-            val goal = KNPOI("카카오 판교아지트", 321286, 532843, "경기 성남시 분당구 판교역로 166")
-            startNavigation(goal)
-            binding.bottomNav.selectedItemId = R.id.nav_map
+        // 공통 클릭 이벤트 도우미 함수
+        fun setDestinationButton(button: View, name: String, x: Int, y: Int, address: String) {
+            button.setOnClickListener {
+                val goal = KNPOI(name, x, y, address)
+                startNavigation(goal)
+                binding.bottomNav.selectedItemId = R.id.nav_map // 내비 탭으로 강제 이동
+            }
         }
+
+        // 1. 평택항 국제여객터미널
+        setDestinationButton(binding.btnGo1, "평택항 국제여객터미널", 289500, 489500, "경기 평택시 포승읍 평택항만길 73")
+        // 2. 인천항 제8부두
+        setDestinationButton(binding.btnGo2, "인천항 제8부두", 282000, 541000, "인천 중구 북성동1가")
+        // 3. 쿠팡 동탄 메가물류센터
+        setDestinationButton(binding.btnGo3, "쿠팡 동탄 메가물류센터", 318000, 513000, "경기 화성시 동탄물류단지")
+        // 4. CJ대한통운 곤지암 허브
+        setDestinationButton(binding.btnGo4, "CJ대한통운 곤지암 허브", 334000, 529000, "경기 광주시 곤지암읍")
+        // 5. 롯데글로벌로지스 이천물류센터
+        setDestinationButton(binding.btnGo5, "롯데 이천물류센터", 345000, 518000, "경기 이천시 마장면")
+        // 6. 부산신항 물류센터
+        setDestinationButton(binding.btnGo6, "부산신항 물류센터", 480000, 275000, "경남 창원시 진해구 신항동")
+        // 7. 마켓컬리 평택 물류센터
+        setDestinationButton(binding.btnGo7, "마켓컬리 평택 물류센터", 295000, 495000, "경기 평택시 청북읍")
+        // 8. 한진택배 대전 메가허브
+        setDestinationButton(binding.btnGo8, "한진 대전 메가허브", 345000, 415000, "대전 유성구 대정동")
+        // 9. 광양항 컨테이너부두
+        setDestinationButton(binding.btnGo9, "광양항 컨테이너부두", 360000, 260000, "전남 광양시 도이동")
+        // 10. 의왕 ICD
+        setDestinationButton(binding.btnGo10, "의왕 내륙컨테이너기지", 310000, 527000, "경기 의왕시 오봉로")
     }
 
     private fun setupSettingsUI() {
@@ -174,6 +195,7 @@ class MainActivity : AppCompatActivity(),
                         naviView = KNNaviView(this@MainActivity)
                         binding.naviContainer.addView(naviView)
                         naviView.useDarkMode = binding.switchDarkMode.isChecked
+
                         startSafeDriving()
                     }
                 }
@@ -207,46 +229,21 @@ class MainActivity : AppCompatActivity(),
     private fun startNavigation(goal: KNPOI) {
         val guidance = KNSDK.sharedGuidance() ?: return
 
-        // 💡 1. 1차 시도: 진짜 GPS에서 위치 가져오기
-        var startX = 314328 // 기본값
-        var startY = 544280 // 기본값
-        var isGpsFound = false
+        guidance.stop()
 
         val currentLocation = guidance.locationGuide?.location
-        if (currentLocation != null) {
-            try {
-                val posObj = currentLocation.pos
-                if (posObj != null) {
-                    for (field in posObj.javaClass.declaredFields) {
-                        field.isAccessible = true
-                        val fieldName = field.name.lowercase()
-                        val value = field.get(posObj)
-                        if (value is Number) {
-                            if (fieldName == "x" || fieldName == "katecx" || fieldName == "longitude" || fieldName == "lon") {
-                                startX = value.toInt()
-                                isGpsFound = true
-                            } else if (fieldName == "y" || fieldName == "katecy" || fieldName == "latitude" || fieldName == "lat") {
-                                startY = value.toInt()
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("KNSDK", "좌표 파싱 에러: ${e.message}")
-            }
+        if (currentLocation == null) {
+            Toast.makeText(this, "GPS 위치를 확인하는 중입니다. 잠시 후 다시 시도해주세요.", Toast.LENGTH_SHORT).show()
+            return
         }
 
-        // 💡 2. 진짜 GPS를 못 잡았을 경우(실내 등) 테스트용 가짜 좌표 강제 주입!
-        if (!isGpsFound) {
-            Toast.makeText(this, "GPS를 찾을 수 없어 강남역을 임시 출발지로 설정합니다.", Toast.LENGTH_LONG).show()
-            // 카카오 카텍 좌표 (강남역)
-            startX = 314328
-            startY = 544280
-        }
+        // 💡 [핵심] 더 이상 강남역 임시 좌표를 쓰지 않고, 내 차의 정확한 pos(KATEC 좌표)를 바로 꺼내옵니다.
+        val startX = currentLocation.pos.x.toInt()
+        val startY = currentLocation.pos.y.toInt()
 
-        val start = KNPOI("현재위치", startX, startY, "")
+        // 💡 출발지 이름과 주소를 완전히 비워서 불필요한 풍선 핀이 꽂히지 않게 합니다.
+        val start = KNPOI("", startX, startY, "")
 
-        // 3. 목적지까지 길찾기 시작
         KNSDK.makeTripWithStart(start, goal, null) { aError, aTrip ->
             if (aTrip != null) {
                 val curRoutePriority = com.kakaomobility.knsdk.KNRoutePriority.KNRoutePriority_Recommand
@@ -255,6 +252,22 @@ class MainActivity : AppCompatActivity(),
                 aTrip.routeWithPriority(curRoutePriority, curAvoidOptions) { error, _ ->
                     if (error == null) {
                         runOnUiThread {
+                            binding.naviContainer.removeAllViews()
+                            naviView = KNNaviView(this@MainActivity)
+                            binding.naviContainer.addView(naviView)
+
+                            naviView.useDarkMode = binding.switchDarkMode.isChecked
+                            naviView.fuelType = when (binding.rgFuel.checkedRadioButtonId) {
+                                R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
+                                R.id.rb_fuel_electric -> KNCarFuel.KNCarFuel_Electric
+                                else -> KNCarFuel.KNCarFuel_Gasoline
+                            }
+                            naviView.carType = when (binding.rgCarType.checkedRadioButtonId) {
+                                R.id.rb_car_type_4 -> KNCarType.KNCarType_4
+                                R.id.rb_car_type_bike -> KNCarType.KNCarType_Bike
+                                else -> KNCarType.KNCarType_1
+                            }
+
                             guidance.apply {
                                 setupDelegates(this)
                                 naviView.initWithGuidance(
@@ -267,26 +280,56 @@ class MainActivity : AppCompatActivity(),
                         }
                     } else {
                         Log.e("KNSDK", "🚨 경로 요청 실패: ${error.msg}")
-                        runOnUiThread { Toast.makeText(this@MainActivity, "길찾기 실패: ${error.msg}", Toast.LENGTH_SHORT).show() }
                     }
                 }
             } else {
                 Log.e("KNSDK", "🚨 트립 생성 실패: ${aError?.msg}")
-                runOnUiThread { Toast.makeText(this@MainActivity, "트립 생성 실패 (카카오 서버 에러)", Toast.LENGTH_SHORT).show() }
             }
         }
     }
 
     // =========================================================================
-    // 💡 델리게이트 구현부
+    // 💡 필수 델리게이트 인터페이스 구현
     // =========================================================================
+
+    // 💡 [초핵심] 카카오 기본 UI에서 '안내 종료(X 버튼)'을 눌렀을 때 발동되는 함수입니다!
+    override fun guidanceGuideEnded(aGuidance: KNGuidance) {
+        if (::naviView.isInitialized) {
+            naviView.guidanceGuideEnded(aGuidance)
+        }
+
+        runOnUiThread {
+            Toast.makeText(this@MainActivity, "안내가 종료되었습니다.", Toast.LENGTH_SHORT).show()
+
+            // 기존 길안내 뷰를 지우고, 깨끗한 새 뷰를 생성하여 다시 붙입니다.
+            binding.naviContainer.removeAllViews()
+            naviView = KNNaviView(this@MainActivity)
+            binding.naviContainer.addView(naviView)
+
+            // 사용자 설정값 복구
+            naviView.useDarkMode = binding.switchDarkMode.isChecked
+            naviView.fuelType = when (binding.rgFuel.checkedRadioButtonId) {
+                R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
+                R.id.rb_fuel_electric -> KNCarFuel.KNCarFuel_Electric
+                else -> KNCarFuel.KNCarFuel_Gasoline
+            }
+            naviView.carType = when (binding.rgCarType.checkedRadioButtonId) {
+                R.id.rb_car_type_4 -> KNCarType.KNCarType_4
+                R.id.rb_car_type_bike -> KNCarType.KNCarType_Bike
+                else -> KNCarType.KNCarType_1
+            }
+
+            // 길 안내선이 모두 지워진 '안전운행 모드'로 복귀합니다!
+            startSafeDriving()
+        }
+    }
+
     override fun guidanceGuideStarted(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceGuideStarted(aGuidance) }
     override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceCheckingRouteChange(aGuidance) }
     override fun guidanceRouteUnchanged(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceRouteUnchanged(aGuidance) }
     override fun guidanceRouteUnchangedWithError(aGuidnace: KNGuidance, aError: KNError) { if (::naviView.isInitialized) naviView.guidanceRouteUnchangedWithError(aGuidnace, aError) }
     override fun guidanceOutOfRoute(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceOutOfRoute(aGuidance) }
     override fun guidanceRouteChanged(aGuidance: KNGuidance, aFromRoute: KNRoute, aFromLocation: KNLocation, aToRoute: KNRoute, aToLocation: KNLocation, aChangeReason: KNGuideRouteChangeReason) {}
-    override fun guidanceGuideEnded(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceGuideEnded(aGuidance) }
     override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo) }
     override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {}
     override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) { if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide) }
