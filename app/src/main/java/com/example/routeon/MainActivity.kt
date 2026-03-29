@@ -207,50 +207,46 @@ class MainActivity : AppCompatActivity(),
     private fun startNavigation(goal: KNPOI) {
         val guidance = KNSDK.sharedGuidance() ?: return
 
-        // 1. 현재 위치 객체를 가져옵니다.
+        // 💡 1. 1차 시도: 진짜 GPS에서 위치 가져오기
+        var startX = 314328 // 기본값
+        var startY = 544280 // 기본값
+        var isGpsFound = false
+
         val currentLocation = guidance.locationGuide?.location
-
-        // 2. 위치를 아직 완벽하게 잡지 못했다면 안내 시작을 잠시 보류합니다.
-        if (currentLocation == null) {
-            Toast.makeText(this, "현재 위치(GPS)를 잡는 중입니다. 잠시 후 다시 눌러주세요.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 💡 3. [초필살기] 리플렉션을 통한 무적의 좌표 추출기
-        // SDK 버전마다 FloatPoint의 변수명이 x, y, longitude 등으로 계속 바뀌어 컴파일이 터지는 것을 막기 위해,
-        // 변수명에 의존하지 않고 객체 내부를 스캔하여 숫자를 강제로 빼냅니다.
-        var startX = 314328 // 기본값 (강남역)
-        var startY = 544280 // 기본값 (강남역)
-
-        try {
-            val posObj = currentLocation.pos
-            if (posObj != null) {
-                // pos 객체 안의 모든 변수를 뒤집니다.
-                for (field in posObj.javaClass.declaredFields) {
-                    field.isAccessible = true // 숨겨진(private) 변수라도 강제로 접근
-                    val fieldName = field.name.lowercase()
-                    val value = field.get(posObj)
-
-                    if (value is Number) {
-                        // 변수 이름이 x, lon, longitude, katecx 중 하나라도 포함되면 X좌표로 인식
-                        if (fieldName == "x" || fieldName == "katecx" || fieldName == "longitude" || fieldName == "lon") {
-                            startX = value.toInt()
-                        }
-                        // 변수 이름이 y, lat, latitude, katecy 중 하나라도 포함되면 Y좌표로 인식
-                        else if (fieldName == "y" || fieldName == "katecy" || fieldName == "latitude" || fieldName == "lat") {
-                            startY = value.toInt()
+        if (currentLocation != null) {
+            try {
+                val posObj = currentLocation.pos
+                if (posObj != null) {
+                    for (field in posObj.javaClass.declaredFields) {
+                        field.isAccessible = true
+                        val fieldName = field.name.lowercase()
+                        val value = field.get(posObj)
+                        if (value is Number) {
+                            if (fieldName == "x" || fieldName == "katecx" || fieldName == "longitude" || fieldName == "lon") {
+                                startX = value.toInt()
+                                isGpsFound = true
+                            } else if (fieldName == "y" || fieldName == "katecy" || fieldName == "latitude" || fieldName == "lat") {
+                                startY = value.toInt()
+                            }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e("KNSDK", "좌표 파싱 에러: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e("KNSDK", "좌표 파싱 에러 (SDK 버전 충돌): ${e.message}")
         }
 
-        // 💡 4. 완벽하게 뽑아낸 좌표(startX, startY)로 출발지를 설정합니다.
+        // 💡 2. 진짜 GPS를 못 잡았을 경우(실내 등) 테스트용 가짜 좌표 강제 주입!
+        if (!isGpsFound) {
+            Toast.makeText(this, "GPS를 찾을 수 없어 강남역을 임시 출발지로 설정합니다.", Toast.LENGTH_LONG).show()
+            // 카카오 카텍 좌표 (강남역)
+            startX = 314328
+            startY = 544280
+        }
+
         val start = KNPOI("현재위치", startX, startY, "")
 
-        // 5. 목적지까지의 트립(경로)을 생성하고 안내를 시작합니다!
+        // 3. 목적지까지 길찾기 시작
         KNSDK.makeTripWithStart(start, goal, null) { aError, aTrip ->
             if (aTrip != null) {
                 val curRoutePriority = com.kakaomobility.knsdk.KNRoutePriority.KNRoutePriority_Recommand
@@ -276,6 +272,7 @@ class MainActivity : AppCompatActivity(),
                 }
             } else {
                 Log.e("KNSDK", "🚨 트립 생성 실패: ${aError?.msg}")
+                runOnUiThread { Toast.makeText(this@MainActivity, "트립 생성 실패 (카카오 서버 에러)", Toast.LENGTH_SHORT).show() }
             }
         }
     }
