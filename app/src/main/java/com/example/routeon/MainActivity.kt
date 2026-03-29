@@ -1,21 +1,28 @@
 package com.example.routeon
 
-// 💡 새로 추가된 차량 정보 및 연료 타입 임포트
-
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.routeon.databinding.ActivityMainBinding
-import com.kakaomobility.knsdk.KNCarFuel
-import com.kakaomobility.knsdk.KNCarType
 import com.kakaomobility.knsdk.KNSDK
 import com.kakaomobility.knsdk.common.objects.KNError
 import com.kakaomobility.knsdk.common.objects.KNPOI
+
+// 💡 SDK 최신 버전에 맞춘 연료/차종 경로
+import com.kakaomobility.knsdk.KNCarFuel
+import com.kakaomobility.knsdk.KNCarType
+
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_CitsGuideDelegate
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_GuideStateDelegate
@@ -50,29 +57,33 @@ class MainActivity : AppCompatActivity(),
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // SDK 필수 폴더 셋팅
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
         KNSDK.install(application, "$filesDir/knsdk")
 
-        // 화면 그리기
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // UI 이벤트 셋팅
         setupBottomNavigation()
         setupSettingsUI()
         setupRunListUI()
 
-        // 권한 확인 및 내비게이션 초기화 시작
         checkLocationPermission()
     }
 
-    // 1. 하단 메뉴 전환 로직 (화면 끄고 켜기)
     private fun setupBottomNavigation() {
         binding.bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_map -> {
                     binding.runListView.visibility = View.GONE
                     binding.settingsView.visibility = View.GONE
+                    WindowCompat.getInsetsController(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
                     true
                 }
                 R.id.nav_list -> {
@@ -90,28 +101,24 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // 2. 운행목록에서 안내 버튼 누를 때 로직
     private fun setupRunListUI() {
         binding.btnGo1.setOnClickListener {
-            // 버튼을 누르면 목표 좌표를 생성하고 길찾기 시작!
             val goal = KNPOI("카카오 판교아지트", 321286, 532843, "경기 성남시 분당구 판교역로 166")
             startNavigation(goal)
-
-            // 길찾기 시작과 동시에 하단 메뉴를 '내비'로 강제 이동시킵니다.
             binding.bottomNav.selectedItemId = R.id.nav_map
         }
     }
 
-    // 3. 설정 탭 옵션 변경 시 내비게이션 엔진에 즉각 반영하는 로직
     private fun setupSettingsUI() {
-        // 다크 모드(야간 맵) 토글
         binding.switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
-            if (::naviView.isInitialized) {
-                naviView.useDarkMode = isChecked
+            if (::naviView.isInitialized) naviView.useDarkMode = isChecked
+            if (isChecked) {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            } else {
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             }
         }
 
-        // 연료 타입 변경
         binding.rgFuel.setOnCheckedChangeListener { _, checkedId ->
             if (!::naviView.isInitialized) return@setOnCheckedChangeListener
             naviView.fuelType = when (checkedId) {
@@ -122,7 +129,6 @@ class MainActivity : AppCompatActivity(),
             }
         }
 
-        // 차종 변경
         binding.rgCarType.setOnCheckedChangeListener { _, checkedId ->
             if (!::naviView.isInitialized) return@setOnCheckedChangeListener
             naviView.carType = when (checkedId) {
@@ -167,8 +173,7 @@ class MainActivity : AppCompatActivity(),
                     runOnUiThread {
                         naviView = KNNaviView(this@MainActivity)
                         binding.naviContainer.addView(naviView)
-
-                        // 앱을 켜면 일단 목적지 없이 '안전운행 모드' 지도를 띄워둡니다.
+                        naviView.useDarkMode = binding.switchDarkMode.isChecked
                         startSafeDriving()
                     }
                 }
@@ -176,7 +181,6 @@ class MainActivity : AppCompatActivity(),
         )
     }
 
-    // 델리게이트 연결을 간편하게 해주는 도우미 함수
     private fun setupDelegates(guidance: KNGuidance) {
         guidance.guideStateDelegate = this
         guidance.locationGuideDelegate = this
@@ -187,7 +191,6 @@ class MainActivity : AppCompatActivity(),
         naviView.mapComponent.mapView.isVisibleTraffic = true
     }
 
-    // 초기 상태: 목적지 없는 안전운행 모드
     private fun startSafeDriving() {
         val guidance = KNSDK.sharedGuidance()
         guidance?.apply {
@@ -201,10 +204,53 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // 안내 시작 버튼 클릭 시 호출: 특정 목적지로 길찾기 모드
     private fun startNavigation(goal: KNPOI) {
-        val start = KNPOI("현재위치", 314328, 544280, "") // 강남역 임시 기준
+        val guidance = KNSDK.sharedGuidance() ?: return
 
+        // 1. 현재 위치 객체를 가져옵니다.
+        val currentLocation = guidance.locationGuide?.location
+
+        // 2. 위치를 아직 완벽하게 잡지 못했다면 안내 시작을 잠시 보류합니다.
+        if (currentLocation == null) {
+            Toast.makeText(this, "현재 위치(GPS)를 잡는 중입니다. 잠시 후 다시 눌러주세요.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 💡 3. [초필살기] 리플렉션을 통한 무적의 좌표 추출기
+        // SDK 버전마다 FloatPoint의 변수명이 x, y, longitude 등으로 계속 바뀌어 컴파일이 터지는 것을 막기 위해,
+        // 변수명에 의존하지 않고 객체 내부를 스캔하여 숫자를 강제로 빼냅니다.
+        var startX = 314328 // 기본값 (강남역)
+        var startY = 544280 // 기본값 (강남역)
+
+        try {
+            val posObj = currentLocation.pos
+            if (posObj != null) {
+                // pos 객체 안의 모든 변수를 뒤집니다.
+                for (field in posObj.javaClass.declaredFields) {
+                    field.isAccessible = true // 숨겨진(private) 변수라도 강제로 접근
+                    val fieldName = field.name.lowercase()
+                    val value = field.get(posObj)
+
+                    if (value is Number) {
+                        // 변수 이름이 x, lon, longitude, katecx 중 하나라도 포함되면 X좌표로 인식
+                        if (fieldName == "x" || fieldName == "katecx" || fieldName == "longitude" || fieldName == "lon") {
+                            startX = value.toInt()
+                        }
+                        // 변수 이름이 y, lat, latitude, katecy 중 하나라도 포함되면 Y좌표로 인식
+                        else if (fieldName == "y" || fieldName == "katecy" || fieldName == "latitude" || fieldName == "lat") {
+                            startY = value.toInt()
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("KNSDK", "좌표 파싱 에러 (SDK 버전 충돌): ${e.message}")
+        }
+
+        // 💡 4. 완벽하게 뽑아낸 좌표(startX, startY)로 출발지를 설정합니다.
+        val start = KNPOI("현재위치", startX, startY, "")
+
+        // 5. 목적지까지의 트립(경로)을 생성하고 안내를 시작합니다!
         KNSDK.makeTripWithStart(start, goal, null) { aError, aTrip ->
             if (aTrip != null) {
                 val curRoutePriority = com.kakaomobility.knsdk.KNRoutePriority.KNRoutePriority_Recommand
@@ -213,8 +259,7 @@ class MainActivity : AppCompatActivity(),
                 aTrip.routeWithPriority(curRoutePriority, curAvoidOptions) { error, _ ->
                     if (error == null) {
                         runOnUiThread {
-                            val guidance = KNSDK.sharedGuidance()
-                            guidance?.apply {
+                            guidance.apply {
                                 setupDelegates(this)
                                 naviView.initWithGuidance(
                                     this,
@@ -224,14 +269,19 @@ class MainActivity : AppCompatActivity(),
                                 )
                             }
                         }
+                    } else {
+                        Log.e("KNSDK", "🚨 경로 요청 실패: ${error.msg}")
+                        runOnUiThread { Toast.makeText(this@MainActivity, "길찾기 실패: ${error.msg}", Toast.LENGTH_SHORT).show() }
                     }
                 }
+            } else {
+                Log.e("KNSDK", "🚨 트립 생성 실패: ${aError?.msg}")
             }
         }
     }
 
     // =========================================================================
-    // 💡 필수 델리게이트 인터페이스 구현부
+    // 💡 델리게이트 구현부
     // =========================================================================
     override fun guidanceGuideStarted(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceGuideStarted(aGuidance) }
     override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceCheckingRouteChange(aGuidance) }
