@@ -35,9 +35,16 @@ android {
             )
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+
+    packaging {
+        packaging {
+            resources {
+                pickFirsts += "**/*.kotlin_builtins"
+                pickFirsts += "META-INF/*.kotlin_module"
+                pickFirsts += "META-INF/native-image/okhttp/okhttp/native-image.properties"
+                pickFirsts += "META-INF/native-image/**/*.properties"
+            }
+        }
     }
 }
 
