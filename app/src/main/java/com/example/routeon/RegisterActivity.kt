@@ -80,12 +80,8 @@ class RegisterActivity : AppCompatActivity() {
                         btnRegister.isEnabled = true
 
                         if (responseCode == 201 || responseCode == 200) {
-                            // (참고) 새 백엔드 응답에서 자동/대기 승인 상태(status)를 내려준다면
-                            // 기존처럼 파싱해서 AlertDialog를 띄울 수 있습니다.
-                            // 현재 스키마 상으로는 성공 시 201을 내려주므로 바로 로그인 또는 메인으로 이동시킵니다.
-                            Toast.makeText(this@RegisterActivity, "가입이 완료되었습니다!", Toast.LENGTH_SHORT).show()
-                            val intent = Intent(this@RegisterActivity, MainActivity::class.java)
-                            startActivity(intent)
+                            Toast.makeText(this@RegisterActivity, "가입이 완료되었습니다!\n로그인 해주세요.", Toast.LENGTH_SHORT).show()
+                            // 가입 완료 시 로그인 화면으로 돌아가기 위해 액티비티를 종료합니다.
                             finish()
                         } else {
                             // FastAPI 등에서 내려주는 에러 메시지(detail) 파싱

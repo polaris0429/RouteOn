@@ -1,16 +1,24 @@
 package com.example.routeon
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.util.Log
 import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -49,7 +57,7 @@ class MainActivity : AppCompatActivity(),
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var naviView: KNNaviView
-    private val LOCATION_PERMISSION_REQUEST_CODE = 1000
+    private val locationPermissionRequestCode = 1000
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,38 +107,35 @@ class MainActivity : AppCompatActivity(),
     }
 
     private fun setupRunListUI() {
-        // 공통 클릭 이벤트 도우미 함수
         fun setDestinationButton(button: View, name: String, x: Int, y: Int, address: String) {
             button.setOnClickListener {
                 val goal = KNPOI(name, x, y, address)
                 startNavigation(goal)
-                binding.bottomNav.selectedItemId = R.id.nav_map // 내비 탭으로 강제 이동
+                binding.bottomNav.selectedItemId = R.id.nav_map
             }
         }
 
-        // 1. 평택항 국제여객터미널
         setDestinationButton(binding.btnGo1, "평택항 국제여객터미널", 289500, 489500, "경기 평택시 포승읍 평택항만길 73")
-        // 2. 인천항 제8부두
         setDestinationButton(binding.btnGo2, "인천항 제8부두", 282000, 541000, "인천 중구 북성동1가")
-        // 3. 쿠팡 동탄 메가물류센터
         setDestinationButton(binding.btnGo3, "쿠팡 동탄 메가물류센터", 318000, 513000, "경기 화성시 동탄물류단지")
-        // 4. CJ대한통운 곤지암 허브
         setDestinationButton(binding.btnGo4, "CJ대한통운 곤지암 허브", 334000, 529000, "경기 광주시 곤지암읍")
-        // 5. 롯데글로벌로지스 이천물류센터
         setDestinationButton(binding.btnGo5, "롯데 이천물류센터", 345000, 518000, "경기 이천시 마장면")
-        // 6. 부산신항 물류센터
         setDestinationButton(binding.btnGo6, "부산신항 물류센터", 480000, 275000, "경남 창원시 진해구 신항동")
-        // 7. 마켓컬리 평택 물류센터
         setDestinationButton(binding.btnGo7, "마켓컬리 평택 물류센터", 295000, 495000, "경기 평택시 청북읍")
-        // 8. 한진택배 대전 메가허브
         setDestinationButton(binding.btnGo8, "한진 대전 메가허브", 345000, 415000, "대전 유성구 대정동")
-        // 9. 광양항 컨테이너부두
         setDestinationButton(binding.btnGo9, "광양항 컨테이너부두", 360000, 260000, "전남 광양시 도이동")
-        // 10. 의왕 ICD
         setDestinationButton(binding.btnGo10, "의왕 내륙컨테이너기지", 310000, 527000, "경기 의왕시 오봉로")
     }
 
+    @SuppressLint("SetTextI18n")
     private fun setupSettingsUI() {
+        // 💡 로그인한 아이디(Username)를 기기 저장소에서 불러와 화면에 출력합니다.
+        val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val savedUsername = sharedPref.getString("username", "알 수 없음") ?: "알 수 없음"
+        binding.tvMyId.text = "아이디: $savedUsername"
+        // (참고) 폰 번호는 로그인 시 저장되지 않으므로 백엔드 /auth/me API 연동 전까지 임시 표시합니다.
+        binding.tvMyPhone.text = "연락처: 조회 필요 (API 연동 대기)"
+
         binding.switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
             if (::naviView.isInitialized) naviView.useDarkMode = isChecked
             if (isChecked) {
@@ -159,14 +164,149 @@ class MainActivity : AppCompatActivity(),
                 else -> KNCarType.KNCarType_1
             }
         }
+
+        binding.btnEditInfo.setOnClickListener {
+            showEditSelectionDialog()
+        }
+
+        binding.btnLogout.setOnClickListener {
+            showLogoutDialog()
+        }
     }
+
+    // =========================================================================
+    // 💡 분리된 내 정보 수정 팝업 기능
+    // =========================================================================
+
+    // 1. 휴대폰/비밀번호 변경 중 선택하는 팝업
+    private fun showEditSelectionDialog() {
+        val options = arrayOf("휴대폰 번호 변경", "비밀번호 변경")
+        AlertDialog.Builder(this)
+            .setTitle("내 정보 변경")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showEditPhoneDialog()
+                    1 -> showEditPasswordDialog()
+                }
+            }
+            .show()
+    }
+
+    // 2. 휴대폰 번호 변경 팝업
+    @SuppressLint("SetTextI18n")
+    private fun showEditPhoneDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 40, 60, 10)
+        }
+        val etPhone = EditText(this).apply {
+            hint = "새 휴대폰 번호 (예: 010-1234-5678)"
+            inputType = InputType.TYPE_CLASS_PHONE
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+        layout.addView(etPhone)
+
+        AlertDialog.Builder(this)
+            .setTitle("휴대폰 번호 변경")
+            .setView(layout)
+            .setPositiveButton("변경하기") { _, _ ->
+                val newPhone = etPhone.text.toString().trim()
+                if (newPhone.isNotEmpty()) {
+                    binding.tvMyPhone.text = "연락처: $newPhone"
+                    Toast.makeText(this, "휴대폰 번호 변경 완료 (서버 동기화 필요)", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "번호를 입력해주세요.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    // 3. 비밀번호 변경 팝업
+    private fun showEditPasswordDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 40, 60, 10)
+        }
+
+        val etCurrentPwd = EditText(this).apply {
+            hint = "현재 비밀번호"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+        val etNewPwd = EditText(this).apply {
+            hint = "새 비밀번호"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+        val etNewPwdConfirm = EditText(this).apply {
+            hint = "새 비밀번호 확인"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+
+        layout.addView(etCurrentPwd)
+        layout.addView(etNewPwd)
+        layout.addView(etNewPwdConfirm)
+
+        AlertDialog.Builder(this)
+            .setTitle("비밀번호 변경")
+            .setView(layout)
+            .setPositiveButton("변경하기") { _, _ ->
+                val current = etCurrentPwd.text.toString()
+                val newPwd = etNewPwd.text.toString()
+                val confirm = etNewPwdConfirm.text.toString()
+
+                if (current.isEmpty() || newPwd.isEmpty() || confirm.isEmpty()) {
+                    Toast.makeText(this, "모든 항목을 입력해주세요.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                if (newPwd != confirm) {
+                    Toast.makeText(this, "새 비밀번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                Log.d("EditInfo", "비밀번호 변경 요청: 현재($current) -> 새($newPwd)")
+                Toast.makeText(this, "비밀번호 변경 로직 수행 (서버 동기화 필요)", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun showLogoutDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("로그아웃")
+            .setMessage("정말 로그아웃 하시겠습니까?")
+            .setPositiveButton("로그아웃") { _, _ ->
+                val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                sharedPref.edit {
+                    clear()
+                }
+
+                val intent = Intent(this, LoginActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                startActivity(intent)
+                finish()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    // =========================================================================
+    // 카카오 내비게이션 초기화 및 실행
+    // =========================================================================
 
     private fun checkLocationPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                LOCATION_PERMISSION_REQUEST_CODE
+                locationPermissionRequestCode
             )
         } else {
             initKakaoNaviSDK()
@@ -175,7 +315,7 @@ class MainActivity : AppCompatActivity(),
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == locationPermissionRequestCode && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             initKakaoNaviSDK()
         } else {
             Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_LONG).show()
@@ -237,11 +377,8 @@ class MainActivity : AppCompatActivity(),
             return
         }
 
-        // 💡 [핵심] 더 이상 강남역 임시 좌표를 쓰지 않고, 내 차의 정확한 pos(KATEC 좌표)를 바로 꺼내옵니다.
         val startX = currentLocation.pos.x.toInt()
         val startY = currentLocation.pos.y.toInt()
-
-        // 💡 출발지 이름과 주소를 완전히 비워서 불필요한 풍선 핀이 꽂히지 않게 합니다.
         val start = KNPOI("", startX, startY, "")
 
         KNSDK.makeTripWithStart(start, goal, null) { aError, aTrip ->
@@ -288,11 +425,6 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // =========================================================================
-    // 💡 필수 델리게이트 인터페이스 구현
-    // =========================================================================
-
-    // 💡 [초핵심] 카카오 기본 UI에서 '안내 종료(X 버튼)'을 눌렀을 때 발동되는 함수입니다!
     override fun guidanceGuideEnded(aGuidance: KNGuidance) {
         if (::naviView.isInitialized) {
             naviView.guidanceGuideEnded(aGuidance)
@@ -301,12 +433,10 @@ class MainActivity : AppCompatActivity(),
         runOnUiThread {
             Toast.makeText(this@MainActivity, "안내가 종료되었습니다.", Toast.LENGTH_SHORT).show()
 
-            // 기존 길안내 뷰를 지우고, 깨끗한 새 뷰를 생성하여 다시 붙입니다.
             binding.naviContainer.removeAllViews()
             naviView = KNNaviView(this@MainActivity)
             binding.naviContainer.addView(naviView)
 
-            // 사용자 설정값 복구
             naviView.useDarkMode = binding.switchDarkMode.isChecked
             naviView.fuelType = when (binding.rgFuel.checkedRadioButtonId) {
                 R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
@@ -319,7 +449,6 @@ class MainActivity : AppCompatActivity(),
                 else -> KNCarType.KNCarType_1
             }
 
-            // 길 안내선이 모두 지워진 '안전운행 모드'로 복귀합니다!
             startSafeDriving()
         }
     }
