@@ -41,94 +41,36 @@
             android:orientation="vertical"
             android:padding="20dp">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="배달 운행 목록"
-                android:textSize="24sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"
-                android:layout_marginBottom="20dp"/>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="20dp">
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="1. 평택항 국제여객터미널 화물상차장" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="경기 평택시 포승읍 평택항만길 73" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="배달 운행 목록"
+                    android:textSize="24sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+
+                <Button
+                    android:id="@+id/btn_refresh_list"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔄 새로고침"
+                    android:backgroundTint="#333333"
+                    android:textColor="#FFFFFF" />
             </LinearLayout>
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="2. 인천항 제8부두 화물터미널" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="인천 중구 북성동1가" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="3. 쿠팡 동탄 메가물류센터" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="경기 화성시 동탄물류단지" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="4. CJ대한통운 곤지암 메가허브" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="경기 광주시 곤지암읍 만선로" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_4" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="5. 롯데글로벌로지스 이천물류센터" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="경기 이천시 마장면" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_5" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="6. 부산신항 항만배후단지 물류센터" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="경남 창원시 진해구 신항동" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_6" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="7. 마켓컬리 평택 물류센터" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="경기 평택시 청북읍" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_7" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="8. 한진택배 대전 메가허브터미널" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="대전 유성구 대정동" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_8" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="9. 광양항 컨테이너부두" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="전남 광양시 도이동" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_9" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:background="?android:attr/colorButtonNormal" android:padding="16dp" android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="10. 의왕 내륙컨테이너기지(ICD)" android:textColor="?android:attr/textColorPrimary" android:textStyle="bold" android:textSize="16sp"/>
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="경기 의왕시 오봉로" android:textColor="?android:attr/textColorSecondary"/>
-                </LinearLayout>
-                <Button android:id="@+id/btn_go_10" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="안내 시작"/>
-            </LinearLayout>
+            <LinearLayout
+                android:id="@+id/run_list_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
 
         </LinearLayout>
     </ScrollView>

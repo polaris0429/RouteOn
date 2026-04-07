@@ -7,11 +7,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Looper
 import android.text.InputType
 import android.util.Log
+import android.view.Gravity
 import android.view.View
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -23,6 +27,12 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.example.routeon.databinding.ActivityMainBinding
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.kakaomobility.knsdk.KNSDK
 import com.kakaomobility.knsdk.common.objects.KNError
 import com.kakaomobility.knsdk.common.objects.KNPOI
@@ -46,6 +56,15 @@ import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.objects.KNSafety
 import com.kakaomobility.knsdk.guidance.knguidance.voiceguide.KNGuide_Voice
 import com.kakaomobility.knsdk.trip.kntrip.knroute.KNRoute
 import com.kakaomobility.knsdk.ui.view.KNNaviView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity(),
     KNGuidance_GuideStateDelegate,
@@ -58,6 +77,9 @@ class MainActivity : AppCompatActivity(),
     private lateinit var binding: ActivityMainBinding
     private lateinit var naviView: KNNaviView
     private val locationPermissionRequestCode = 1000
+
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationCallback: LocationCallback
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,9 +99,352 @@ class MainActivity : AppCompatActivity(),
 
         setupBottomNavigation()
         setupSettingsUI()
+
+        // 💡 운행 목록 초기화 및 서버에서 불러오기
         setupRunListUI()
 
         checkLocationPermission()
+    }
+
+    // =========================================================================
+    // 💡 백엔드 연동: 운행 목록 (GET /deliveries) 동적 생성 로직
+    // =========================================================================
+
+    private fun setupRunListUI() {
+        val btnRefresh = findViewById<Button>(R.id.btn_refresh_list)
+        btnRefresh.setOnClickListener {
+            Toast.makeText(this, "운행 목록을 갱신합니다...", Toast.LENGTH_SHORT).show()
+            fetchDeliveries()
+        }
+
+        // 화면이 켜질 때 최초 1회 불러오기
+        fetchDeliveries()
+    }
+
+    private fun fetchDeliveries() {
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/deliveries")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 5000
+
+                if (conn.responseCode == 200) {
+                    val responseData = conn.inputStream.bufferedReader().use { it.readText() }
+                    val jsonArray = JSONArray(responseData)
+                    withContext(Dispatchers.Main) {
+                        renderRunList(jsonArray)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun renderRunList(jsonArray: JSONArray) {
+        val container = findViewById<LinearLayout>(R.id.run_list_container)
+        container.removeAllViews() // 기존 목록 초기화
+
+        if (jsonArray.length() == 0) {
+            val emptyTv = TextView(this).apply {
+                text = "현재 배정된 배송지가 없습니다."
+                setPadding(20, 20, 20, 20)
+                textSize = 16f
+            }
+            container.addView(emptyTv)
+            return
+        }
+
+        // 받아온 JSON 배열을 하나씩 돌면서 UI 블록(LinearLayout)을 만들어 붙입니다.
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            val address = obj.optString("address", "주소 없음")
+            val status = obj.optString("status", "대기")
+            val lat = obj.optDouble("lat", 0.0)
+            val lng = obj.optDouble("lng", 0.0)
+
+            val itemLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(40, 40, 40, 40)
+                val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                params.bottomMargin = 24
+                layoutParams = params
+                setBackgroundResource(android.R.drawable.btn_default) // 버튼 스타일 배경
+            }
+
+            val textLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val titleTv = TextView(this).apply {
+                text = "${i + 1}. $address"
+                textSize = 16f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(android.graphics.Color.BLACK)
+            }
+
+            val statusTv = TextView(this).apply {
+                val statusKr = when(status) {
+                    "pending" -> "대기중"
+                    "in_progress" -> "배송 진행중"
+                    "done" -> "완료됨"
+                    else -> status
+                }
+                text = "상태: $statusKr"
+                textSize = 14f
+                setTextColor(android.graphics.Color.DKGRAY)
+                setPadding(0, 8, 0, 0)
+            }
+
+            textLayout.addView(titleTv)
+            textLayout.addView(statusTv)
+
+            val btn = Button(this).apply {
+                text = "안내 시작"
+                setOnClickListener {
+                    // 💡 위경도를 카카오 좌표로 변환 후 안내 시작
+                    startNavigationWithWGS84(address, lat, lng)
+                }
+            }
+
+            itemLayout.addView(textLayout)
+            itemLayout.addView(btn)
+            container.addView(itemLayout)
+        }
+    }
+
+    // 💡 [핵심] 일반 위도경도(WGS84)를 카카오 내비 전용 좌표(KATEC)로 변환하는 함수
+    private fun startNavigationWithWGS84(name: String, lat: Double, lng: Double) {
+        Toast.makeText(this, "경로 좌표를 변환 중입니다...", Toast.LENGTH_SHORT).show()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // 카카오 로컬 REST API를 호출하여 좌표계 변환 수행 (앱키 재사용)
+                val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KATEC")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "KakaoAK b57bc6d46e97f480deecdd3a8e4cd754")
+
+                if (conn.responseCode == 200) {
+                    val res = conn.inputStream.bufferedReader().readText()
+                    val docs = JSONObject(res).getJSONArray("documents")
+                    if (docs.length() > 0) {
+                        val katecX = docs.getJSONObject(0).getDouble("x").toInt()
+                        val katecY = docs.getJSONObject(0).getDouble("y").toInt()
+
+                        withContext(Dispatchers.Main) {
+                            val goal = KNPOI(name, katecX, katecY, name)
+                            startNavigation(goal)
+                            binding.bottomNav.selectedItemId = R.id.nav_map // 지도로 화면 넘기기
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "카카오 좌표 변환 실패", Toast.LENGTH_SHORT).show() }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // =========================================================================
+    // 💡 내 정보 수정 (PATCH /auth/me) 서버 연동
+    // =========================================================================
+
+    private fun updateMyInfoOnServer(jsonParam: JSONObject, onSuccess: () -> Unit) {
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/auth/me")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "PATCH" // 백엔드 팀원분이 만든 PATCH 규격 사용
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.doOutput = true
+
+                OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
+
+                val responseCode = conn.responseCode
+                withContext(Dispatchers.Main) {
+                    if (responseCode == 200 || responseCode == 204) {
+                        onSuccess()
+                    } else {
+                        Toast.makeText(this@MainActivity, "정보 수정 실패 (오류 코드: $responseCode)", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "서버 연결 오류", Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun showEditPhoneDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 40, 60, 10)
+        }
+        val etPhone = EditText(this).apply {
+            hint = "새 휴대폰 번호 (예: 010-1234-5678)"
+            inputType = InputType.TYPE_CLASS_PHONE
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+        layout.addView(etPhone)
+        AlertDialog.Builder(this)
+            .setTitle("휴대폰 번호 변경")
+            .setView(layout)
+            .setPositiveButton("변경하기") { _, _ ->
+                val newPhone = etPhone.text.toString().trim()
+                if (newPhone.isNotEmpty()) {
+                    val json = JSONObject().apply { put("phone", newPhone) }
+                    updateMyInfoOnServer(json) {
+                        binding.tvMyPhone.text = "연락처: $newPhone"
+                        Toast.makeText(this, "휴대폰 번호가 안전하게 변경되었습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun showEditPasswordDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(60, 40, 60, 10)
+        }
+        val etCurrentPwd = EditText(this).apply {
+            hint = "현재 비밀번호"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+        val etNewPwd = EditText(this).apply {
+            hint = "새 비밀번호"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+        val etNewPwdConfirm = EditText(this).apply {
+            hint = "새 비밀번호 확인"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine()
+            setPadding(20, 30, 20, 30)
+        }
+        layout.addView(etCurrentPwd)
+        layout.addView(etNewPwd)
+        layout.addView(etNewPwdConfirm)
+
+        AlertDialog.Builder(this)
+            .setTitle("비밀번호 변경")
+            .setView(layout)
+            .setPositiveButton("변경하기") { _, _ ->
+                val current = etCurrentPwd.text.toString()
+                val newPwd = etNewPwd.text.toString()
+                val confirm = etNewPwdConfirm.text.toString()
+
+                if (current.isEmpty() || newPwd.isEmpty() || confirm.isEmpty()) return@setPositiveButton
+                if (newPwd != confirm) {
+                    Toast.makeText(this, "새 비밀번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                val json = JSONObject().apply {
+                    put("current_password", current)
+                    put("new_password", newPwd)
+                }
+                updateMyInfoOnServer(json) {
+                    Toast.makeText(this, "비밀번호가 성공적으로 변경되었습니다.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+
+    // =========================================================================
+    // 기존 기능 유지 (GPS 전송, UI 설정 등)
+    // =========================================================================
+
+    @SuppressLint("MissingPermission")
+    private fun startLocationUpdates() {
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000)
+            .setMinUpdateIntervalMillis(3000)
+            .build()
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult.lastLocation?.let { location ->
+                    sendLocationToServer(location.latitude, location.longitude, location.speed)
+                }
+            }
+        }
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
+    }
+
+    private fun sendLocationToServer(lat: Double, lng: Double, speed: Float) {
+        val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val token = sharedPref.getString("access_token", null) ?: return
+        val userId = sharedPref.getString("user_id", null) ?: return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/location-logs")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                conn.doOutput = true
+
+                val jsonParam = JSONObject().apply {
+                    put("user_id", userId)
+                    put("lat", lat)
+                    put("lon", lng)
+                    put("speed", speed)
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
+                conn.responseCode // 통신 실행
+            } catch (e: Exception) {
+                Log.e("LocationUpdate", "위치 전송 에러: ${e.message}")
+            }
+        }
+    }
+
+    private fun checkLocationPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                locationPermissionRequestCode
+            )
+        } else {
+            initKakaoNaviSDK()
+            startLocationUpdates()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == locationPermissionRequestCode && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            initKakaoNaviSDK()
+            startLocationUpdates()
+        } else {
+            Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_LONG).show()
+            finish()
+        }
     }
 
     private fun setupBottomNavigation() {
@@ -106,79 +471,38 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    private fun setupRunListUI() {
-        fun setDestinationButton(button: View, name: String, x: Int, y: Int, address: String) {
-            button.setOnClickListener {
-                val goal = KNPOI(name, x, y, address)
-                startNavigation(goal)
-                binding.bottomNav.selectedItemId = R.id.nav_map
-            }
-        }
-
-        setDestinationButton(binding.btnGo1, "평택항 국제여객터미널", 289500, 489500, "경기 평택시 포승읍 평택항만길 73")
-        setDestinationButton(binding.btnGo2, "인천항 제8부두", 282000, 541000, "인천 중구 북성동1가")
-        setDestinationButton(binding.btnGo3, "쿠팡 동탄 메가물류센터", 318000, 513000, "경기 화성시 동탄물류단지")
-        setDestinationButton(binding.btnGo4, "CJ대한통운 곤지암 허브", 334000, 529000, "경기 광주시 곤지암읍")
-        setDestinationButton(binding.btnGo5, "롯데 이천물류센터", 345000, 518000, "경기 이천시 마장면")
-        setDestinationButton(binding.btnGo6, "부산신항 물류센터", 480000, 275000, "경남 창원시 진해구 신항동")
-        setDestinationButton(binding.btnGo7, "마켓컬리 평택 물류센터", 295000, 495000, "경기 평택시 청북읍")
-        setDestinationButton(binding.btnGo8, "한진 대전 메가허브", 345000, 415000, "대전 유성구 대정동")
-        setDestinationButton(binding.btnGo9, "광양항 컨테이너부두", 360000, 260000, "전남 광양시 도이동")
-        setDestinationButton(binding.btnGo10, "의왕 내륙컨테이너기지", 310000, 527000, "경기 의왕시 오봉로")
-    }
-
     @SuppressLint("SetTextI18n")
     private fun setupSettingsUI() {
-        // 💡 로그인한 아이디(Username)를 기기 저장소에서 불러와 화면에 출력합니다.
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val savedUsername = sharedPref.getString("username", "알 수 없음") ?: "알 수 없음"
         binding.tvMyId.text = "아이디: $savedUsername"
-        // (참고) 폰 번호는 로그인 시 저장되지 않으므로 백엔드 /auth/me API 연동 전까지 임시 표시합니다.
-        binding.tvMyPhone.text = "연락처: 조회 필요 (API 연동 대기)"
+        binding.tvMyPhone.text = "연락처: 조회 필요"
 
         binding.switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
             if (::naviView.isInitialized) naviView.useDarkMode = isChecked
-            if (isChecked) {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-            } else {
-                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-            }
+            if (isChecked) AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            else AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         }
-
         binding.rgFuel.setOnCheckedChangeListener { _, checkedId ->
             if (!::naviView.isInitialized) return@setOnCheckedChangeListener
             naviView.fuelType = when (checkedId) {
-                R.id.rb_fuel_gasoline -> KNCarFuel.KNCarFuel_Gasoline
                 R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
                 R.id.rb_fuel_electric -> KNCarFuel.KNCarFuel_Electric
                 else -> KNCarFuel.KNCarFuel_Gasoline
             }
         }
-
         binding.rgCarType.setOnCheckedChangeListener { _, checkedId ->
             if (!::naviView.isInitialized) return@setOnCheckedChangeListener
             naviView.carType = when (checkedId) {
-                R.id.rb_car_type_1 -> KNCarType.KNCarType_1
                 R.id.rb_car_type_4 -> KNCarType.KNCarType_4
                 R.id.rb_car_type_bike -> KNCarType.KNCarType_Bike
                 else -> KNCarType.KNCarType_1
             }
         }
-
-        binding.btnEditInfo.setOnClickListener {
-            showEditSelectionDialog()
-        }
-
-        binding.btnLogout.setOnClickListener {
-            showLogoutDialog()
-        }
+        binding.btnEditInfo.setOnClickListener { showEditSelectionDialog() }
+        binding.btnLogout.setOnClickListener { showLogoutDialog() }
     }
 
-    // =========================================================================
-    // 💡 분리된 내 정보 수정 팝업 기능
-    // =========================================================================
-
-    // 1. 휴대폰/비밀번호 변경 중 선택하는 팝업
     private fun showEditSelectionDialog() {
         val options = arrayOf("휴대폰 번호 변경", "비밀번호 변경")
         AlertDialog.Builder(this)
@@ -192,102 +516,12 @@ class MainActivity : AppCompatActivity(),
             .show()
     }
 
-    // 2. 휴대폰 번호 변경 팝업
-    @SuppressLint("SetTextI18n")
-    private fun showEditPhoneDialog() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(60, 40, 60, 10)
-        }
-        val etPhone = EditText(this).apply {
-            hint = "새 휴대폰 번호 (예: 010-1234-5678)"
-            inputType = InputType.TYPE_CLASS_PHONE
-            setSingleLine()
-            setPadding(20, 30, 20, 30)
-        }
-        layout.addView(etPhone)
-
-        AlertDialog.Builder(this)
-            .setTitle("휴대폰 번호 변경")
-            .setView(layout)
-            .setPositiveButton("변경하기") { _, _ ->
-                val newPhone = etPhone.text.toString().trim()
-                if (newPhone.isNotEmpty()) {
-                    binding.tvMyPhone.text = "연락처: $newPhone"
-                    Toast.makeText(this, "휴대폰 번호 변경 완료 (서버 동기화 필요)", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this, "번호를 입력해주세요.", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("취소", null)
-            .show()
-    }
-
-    // 3. 비밀번호 변경 팝업
-    private fun showEditPasswordDialog() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(60, 40, 60, 10)
-        }
-
-        val etCurrentPwd = EditText(this).apply {
-            hint = "현재 비밀번호"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine()
-            setPadding(20, 30, 20, 30)
-        }
-        val etNewPwd = EditText(this).apply {
-            hint = "새 비밀번호"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine()
-            setPadding(20, 30, 20, 30)
-        }
-        val etNewPwdConfirm = EditText(this).apply {
-            hint = "새 비밀번호 확인"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine()
-            setPadding(20, 30, 20, 30)
-        }
-
-        layout.addView(etCurrentPwd)
-        layout.addView(etNewPwd)
-        layout.addView(etNewPwdConfirm)
-
-        AlertDialog.Builder(this)
-            .setTitle("비밀번호 변경")
-            .setView(layout)
-            .setPositiveButton("변경하기") { _, _ ->
-                val current = etCurrentPwd.text.toString()
-                val newPwd = etNewPwd.text.toString()
-                val confirm = etNewPwdConfirm.text.toString()
-
-                if (current.isEmpty() || newPwd.isEmpty() || confirm.isEmpty()) {
-                    Toast.makeText(this, "모든 항목을 입력해주세요.", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-
-                if (newPwd != confirm) {
-                    Toast.makeText(this, "새 비밀번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-
-                Log.d("EditInfo", "비밀번호 변경 요청: 현재($current) -> 새($newPwd)")
-                Toast.makeText(this, "비밀번호 변경 로직 수행 (서버 동기화 필요)", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("취소", null)
-            .show()
-    }
-
     private fun showLogoutDialog() {
         AlertDialog.Builder(this)
             .setTitle("로그아웃")
             .setMessage("정말 로그아웃 하시겠습니까?")
             .setPositiveButton("로그아웃") { _, _ ->
-                val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-                sharedPref.edit {
-                    clear()
-                }
-
+                getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).edit { clear() }
                 val intent = Intent(this, LoginActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 startActivity(intent)
@@ -297,31 +531,16 @@ class MainActivity : AppCompatActivity(),
             .show()
     }
 
-    // =========================================================================
-    // 카카오 내비게이션 초기화 및 실행
-    // =========================================================================
-
-    private fun checkLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                locationPermissionRequestCode
-            )
-        } else {
-            initKakaoNaviSDK()
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::fusedLocationClient.isInitialized) {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == locationPermissionRequestCode && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            initKakaoNaviSDK()
-        } else {
-            Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_LONG).show()
-            finish()
-        }
-    }
+    // =========================================================================
+    // 카카오 내비게이션 기능
+    // =========================================================================
 
     private fun initKakaoNaviSDK() {
         KNSDK.initializeWithAppKey(
@@ -335,7 +554,6 @@ class MainActivity : AppCompatActivity(),
                         naviView = KNNaviView(this@MainActivity)
                         binding.naviContainer.addView(naviView)
                         naviView.useDarkMode = binding.switchDarkMode.isChecked
-
                         startSafeDriving()
                     }
                 }
@@ -358,8 +576,7 @@ class MainActivity : AppCompatActivity(),
         guidance?.apply {
             setupDelegates(this)
             naviView.initWithGuidance(
-                this,
-                null,
+                this, null,
                 com.kakaomobility.knsdk.KNRoutePriority.KNRoutePriority_Recommand,
                 com.kakaomobility.knsdk.KNRouteAvoidOption.KNRouteAvoidOption_None.value
             )
@@ -368,7 +585,6 @@ class MainActivity : AppCompatActivity(),
 
     private fun startNavigation(goal: KNPOI) {
         val guidance = KNSDK.sharedGuidance() ?: return
-
         guidance.stop()
 
         val currentLocation = guidance.locationGuide?.location
@@ -407,48 +623,22 @@ class MainActivity : AppCompatActivity(),
 
                             guidance.apply {
                                 setupDelegates(this)
-                                naviView.initWithGuidance(
-                                    this,
-                                    aTrip,
-                                    curRoutePriority,
-                                    curAvoidOptions
-                                )
+                                naviView.initWithGuidance(this, aTrip, curRoutePriority, curAvoidOptions)
                             }
                         }
-                    } else {
-                        Log.e("KNSDK", "🚨 경로 요청 실패: ${error.msg}")
-                    }
+                    } else Log.e("KNSDK", "🚨 경로 요청 실패: ${error.msg}")
                 }
-            } else {
-                Log.e("KNSDK", "🚨 트립 생성 실패: ${aError?.msg}")
-            }
+            } else Log.e("KNSDK", "🚨 트립 생성 실패: ${aError?.msg}")
         }
     }
 
     override fun guidanceGuideEnded(aGuidance: KNGuidance) {
-        if (::naviView.isInitialized) {
-            naviView.guidanceGuideEnded(aGuidance)
-        }
-
+        if (::naviView.isInitialized) naviView.guidanceGuideEnded(aGuidance)
         runOnUiThread {
             Toast.makeText(this@MainActivity, "안내가 종료되었습니다.", Toast.LENGTH_SHORT).show()
-
             binding.naviContainer.removeAllViews()
             naviView = KNNaviView(this@MainActivity)
             binding.naviContainer.addView(naviView)
-
-            naviView.useDarkMode = binding.switchDarkMode.isChecked
-            naviView.fuelType = when (binding.rgFuel.checkedRadioButtonId) {
-                R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
-                R.id.rb_fuel_electric -> KNCarFuel.KNCarFuel_Electric
-                else -> KNCarFuel.KNCarFuel_Gasoline
-            }
-            naviView.carType = when (binding.rgCarType.checkedRadioButtonId) {
-                R.id.rb_car_type_4 -> KNCarType.KNCarType_4
-                R.id.rb_car_type_bike -> KNCarType.KNCarType_Bike
-                else -> KNCarType.KNCarType_1
-            }
-
             startSafeDriving()
         }
     }

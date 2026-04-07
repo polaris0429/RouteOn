@@ -24,7 +24,6 @@ class LoginActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         super.onCreate(savedInstanceState)
 
-        // 💡 [자동 로그인 체크] 이전에 로그인한 기록이 있으면 즉시 메인화면으로 이동!
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         if (sharedPref.getBoolean("isLoggedIn", false)) {
             startActivity(Intent(this, MainActivity::class.java))
@@ -39,7 +38,6 @@ class LoginActivity : AppCompatActivity() {
         val btnLogin = findViewById<Button>(R.id.btn_login)
         val tvGoRegister = findViewById<TextView>(R.id.tv_go_register)
 
-        // 회원가입 텍스트 클릭 시 가입 화면으로 이동
         tvGoRegister.setOnClickListener {
             startActivity(Intent(this, RegisterActivity::class.java))
         }
@@ -57,6 +55,7 @@ class LoginActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
+                    // 1. 로그인 요청
                     val url = URL("http://swc.ddns.net:8000/auth/login")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
@@ -69,25 +68,46 @@ class LoginActivity : AppCompatActivity() {
                         put("username", username)
                         put("password", password)
                     }
-
                     OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
 
-                    val responseCode = conn.responseCode
-                    withContext(Dispatchers.Main) {
-                        btnLogin.isEnabled = true
+                    if (conn.responseCode == 200) {
+                        val responseData = conn.inputStream.bufferedReader().use { it.readText() }
+                        val token = JSONObject(responseData).optString("access_token", "")
 
-                        if (responseCode == 200) {
-                            // 💡 [로그인 성공] 로그인 상태를 저장(자동로그인용)하고 메인 화면으로 이동
+                        // 💡 2. 발급받은 토큰으로 내 정보(/auth/me)를 조회하여 고유 user_id(UUID)를 가져옵니다.
+                        val meUrl = URL("http://swc.ddns.net:8000/auth/me")
+                        val meConn = meUrl.openConnection() as HttpURLConnection
+                        meConn.requestMethod = "GET"
+                        meConn.setRequestProperty("Authorization", "Bearer $token")
+
+                        if (meConn.responseCode == 200) {
+                            val meData = meConn.inputStream.bufferedReader().use { it.readText() }
+                            val userId = JSONObject(meData).optString("id", "")
+
+                            // 토큰과 user_id를 함께 저장! (위치 전송에 사용됨)
                             sharedPref.edit().apply {
                                 putBoolean("isLoggedIn", true)
-                                putString("username", username) // 아이디도 저장해둡니다
+                                putString("username", username)
+                                putString("access_token", token)
+                                putString("user_id", userId)
                                 apply()
                             }
 
-                            Toast.makeText(this@LoginActivity, "로그인 성공!", Toast.LENGTH_SHORT).show()
-                            startActivity(Intent(this@LoginActivity, MainActivity::class.java))
-                            finish()
+                            withContext(Dispatchers.Main) {
+                                btnLogin.isEnabled = true
+                                Toast.makeText(this@LoginActivity, "로그인 성공!", Toast.LENGTH_SHORT).show()
+                                startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+                                finish()
+                            }
                         } else {
+                            withContext(Dispatchers.Main) {
+                                btnLogin.isEnabled = true
+                                Toast.makeText(this@LoginActivity, "유저 정보를 불러올 수 없습니다.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            btnLogin.isEnabled = true
                             Toast.makeText(this@LoginActivity, "아이디 또는 비밀번호가 틀렸습니다.", Toast.LENGTH_SHORT).show()
                         }
                     }
