@@ -16,6 +16,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -42,14 +43,12 @@ class RegisterActivity : AppCompatActivity() {
     private var isPhoneVerified = false
     private lateinit var otpBoxes: Array<EditText>
 
-    // 💡 팝업 없이 백그라운드에서 조용히 문자를 낚아채는 리시버
     private val silentSmsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
                 val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
                 for (sms in messages) {
                     val messageBody = sms.messageBody
-                    // RouteOn에서 보낸 문자인지 확인
                     if (messageBody.contains("[RouteOn]")) {
                         val code = Regex("\\d{6}").find(messageBody)?.value
 
@@ -57,7 +56,6 @@ class RegisterActivity : AppCompatActivity() {
                             for (i in 0 until 6) {
                                 otpBoxes[i].setText(code[i].toString())
                             }
-                            // 자동으로 인증 확인 버튼 클릭
                             findViewById<Button>(R.id.btn_verify_sms).performClick()
                         }
                     }
@@ -71,7 +69,6 @@ class RegisterActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_register)
 
-        // 앱 시작 시 SMS 읽기 권한 요청
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(
                 Manifest.permission.RECEIVE_SMS,
@@ -88,6 +85,7 @@ class RegisterActivity : AppCompatActivity() {
         val btnSendSms = findViewById<Button>(R.id.btn_send_sms)
         val layoutVerification = findViewById<LinearLayout>(R.id.layout_verification)
         val btnVerifySms = findViewById<Button>(R.id.btn_verify_sms)
+        val tvVerifySuccess = findViewById<TextView>(R.id.tv_verify_success)
 
         otpBoxes = arrayOf(
             findViewById(R.id.otp1), findViewById(R.id.otp2), findViewById(R.id.otp3),
@@ -103,7 +101,7 @@ class RegisterActivity : AppCompatActivity() {
         }
 
         // ==========================================
-        // 1. 인증번호 발송 (SDK 없이 다이렉트 HTTP 요청!)
+        // 1. 인증번호 발송
         // ==========================================
         btnSendSms.setOnClickListener {
             val phone = etPhone.text.toString().trim().replace("-", "")
@@ -114,15 +112,12 @@ class RegisterActivity : AppCompatActivity() {
 
             generatedCode = (100000..999999).random().toString()
             btnSendSms.isEnabled = false
-            Toast.makeText(this, "인증번호를 발송 중입니다...", Toast.LENGTH_SHORT).show()
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    // 🚨 (주의) 테스트 완료 후 실제 서비스 배포 시 API 키는 백엔드로 숨기셔야 합니다.
                     val apiKey = "NCS5JONCEGRELVCQ"
                     val apiSecret = "YLPZWOHL2V3ZXI4YBJGCAF3DUB9GNSGK"
 
-                    // 솔라피 인증용 서명(Signature) 생성
                     val salt = UUID.randomUUID().toString().replace("-", "")
                     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
                     sdf.timeZone = TimeZone.getTimeZone("UTC")
@@ -135,7 +130,6 @@ class RegisterActivity : AppCompatActivity() {
                     }
                     val authHeader = "HMAC-SHA256 apiKey=$apiKey, date=$date, salt=$salt, signature=$signature"
 
-                    // 솔라피 서버로 문자 전송 요청
                     val url = URL("https://api.solapi.com/messages/v4/send")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
@@ -160,7 +154,7 @@ class RegisterActivity : AppCompatActivity() {
                         if (responseCode == 200) {
                             layoutVerification.visibility = View.VISIBLE
                             otpBoxes[0].requestFocus()
-                            Toast.makeText(this@RegisterActivity, "인증번호 발송 완료! (자동입력 대기중)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@RegisterActivity, "인증번호 발송 완료!", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(this@RegisterActivity, "발송 실패 (코드: $responseCode)", Toast.LENGTH_LONG).show()
                         }
@@ -175,7 +169,7 @@ class RegisterActivity : AppCompatActivity() {
         }
 
         // ==========================================
-        // 2. 인증번호 직접 확인
+        // 2. 인증번호 직접 확인 및 UI 변경
         // ==========================================
         btnVerifySms.setOnClickListener {
             val inputCode = otpBoxes.joinToString("") { it.text.toString() }
@@ -187,7 +181,10 @@ class RegisterActivity : AppCompatActivity() {
                 etPhone.isEnabled = false
                 otpBoxes.forEach { it.isEnabled = false }
                 btnSendSms.isEnabled = false
-                btnVerifySms.isEnabled = false
+
+                // 💡 [핵심] 인증 성공 시 버튼 숨기고 텍스트 표시!
+                btnVerifySms.visibility = View.GONE
+                tvVerifySuccess.visibility = View.VISIBLE
             } else {
                 Toast.makeText(this, "인증번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
             }
