@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 💡 GET /trips : 운행 목록 조회 및 원본 데이터 로깅
+    // 💡 GET /trips : 운행 목록 조회
     // =========================================================================
     private fun setupRunListUI() {
         val btnRefresh = findViewById<Button>(R.id.btn_refresh_list)
@@ -227,14 +227,16 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 💡 좌표 변환 및 서버 최적화 연동 (WCONGNAMUL 마법의 꼼수 적용)
+    // 💡 좌표 변환 및 서버 최적화 연동 (KTM으로 400 에러 완벽 해결)
     // =========================================================================
 
     private suspend fun convertWGS84ToKATEC(lat: Double, lng: Double): Pair<Int, Int>? {
+        if (lat < 30.0 || lng < 120.0) return null // 0.0 등 유효하지 않은 좌표 차단
+
         return withContext(Dispatchers.IO) {
             try {
-                // 🚨 KATEC 에러 회피를 위해 WCONGNAMUL 로 요청합니다.
-                val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=WCONGNAMUL")
+                // 🚨 카카오 공식 파라미터인 KTM 으로 요청합니다!
+                val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 // 🚨 반드시 카카오 개발자 센터의 'REST API 키'를 넣으세요!
@@ -247,20 +249,16 @@ class MainActivity : AppCompatActivity(),
                     val res = conn.inputStream.bufferedReader().readText()
                     val docs = JSONObject(res).getJSONArray("documents")
                     if (docs.length() > 0) {
-                        val wX = docs.getJSONObject(0).getDouble("x")
-                        val wY = docs.getJSONObject(0).getDouble("y")
-
-                        // 💡 얻어온 WCONGNAMUL 좌표를 2.5로 나누면 KATEC 좌표가 됩니다!
-                        val katecX = (wX / 2.5).toInt()
-                        val katecY = (wY / 2.5).toInt()
-                        return@withContext Pair(katecX, katecY)
+                        val x = docs.getJSONObject(0).getDouble("x").toInt()
+                        val y = docs.getJSONObject(0).getDouble("y").toInt()
+                        return@withContext Pair(x, y)
                     }
                 } else {
                     val errorStream = conn.errorStream?.bufferedReader()?.readText()
                     Log.e("KakaoAPI", "카카오 좌표 변환 에러 (코드: $responseCode, 내용: $errorStream)")
                 }
             } catch (e: Exception) {
-                Log.e("KakaoAPI", "카카오 통신 에러: ${e.javaClass.simpleName}")
+                Log.e("KakaoAPI", "통신 에러: ${e.javaClass.simpleName}")
             }
             return@withContext null
         }
@@ -299,7 +297,6 @@ class MainActivity : AppCompatActivity(),
 
                     val jsonResponse = JSONObject(responseData)
 
-                    // 💡 배열 이름을 유연하게 찾습니다.
                     val optimizedArray = jsonResponse.optJSONArray("route")
                         ?: jsonResponse.optJSONArray("optimized_route")
                         ?: jsonResponse.optJSONArray("waypoints")
@@ -310,7 +307,6 @@ class MainActivity : AppCompatActivity(),
                         var finalDestLat = destLat
                         var finalDestLng = destLng
 
-                        // 💡 type 속성을 보고 휴게소/창고만 경유지로 빼냅니다.
                         for (i in 0 until optimizedArray.length()) {
                             val pt = optimizedArray.getJSONObject(i)
                             val type = pt.optString("type", "")
@@ -337,11 +333,17 @@ class MainActivity : AppCompatActivity(),
                         val goalKatec = convertWGS84ToKATEC(finalDestLat, finalDestLng)
 
                         if (startKatec != null && goalKatec != null) {
-                            val startPoi = KNPOI("현재 위치", startKatec.first, startKatec.second, "")
+
+                            // 🚨 'Not found origin link' 방어 로직
+                            val matchedLocation = KNSDK.sharedGuidance()?.locationGuide?.location
+                            val startX = matchedLocation?.pos?.x?.toInt() ?: startKatec.first
+                            val startY = matchedLocation?.pos?.y?.toInt() ?: startKatec.second
+
+                            val startPoi = KNPOI("현재 위치", startX, startY, "")
                             val goalPoi = KNPOI(finalDestName, goalKatec.first, goalKatec.second, "")
 
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, "최적화 완료! 경유지를 포함해 안내합니다.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(this@MainActivity, "최적화 완료! 다중 경유지 안내를 시작합니다.", Toast.LENGTH_LONG).show()
                                 startNavigationWithWaypoints(startPoi, goalPoi, viaList)
                             }
                         } else {
@@ -405,7 +407,7 @@ class MainActivity : AppCompatActivity(),
                             }
                             binding.bottomNav.selectedItemId = R.id.nav_map
                         }
-                    } else Log.e("KNSDK", "🚨 경로 요청 실패: ${error.msg}")
+                    } else Log.e("KNSDK", "🚨 경로 탐색 실패: ${error.msg}")
                 }
             } else Log.e("KNSDK", "🚨 트립 생성 실패: ${aError?.msg}")
         }
@@ -414,14 +416,14 @@ class MainActivity : AppCompatActivity(),
     @SuppressLint("MissingPermission")
     private fun startNavigationWithWGS84(name: String, lat: Double, lng: Double) {
         CoroutineScope(Dispatchers.IO).launch {
-            if (lat == 0.0 && lng == 0.0) {
-                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "목적지 좌표 오류(0.0)", Toast.LENGTH_LONG).show() }
+            if (lat < 30.0 || lng < 120.0) {
+                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "목적지 좌표 오류. 백엔드 데이터를 확인하세요!", Toast.LENGTH_LONG).show() }
                 return@launch
             }
 
             try {
-                // 🚨 여기도 KATEC 대신 WCONGNAMUL 로 요청합니다!
-                val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=WCONGNAMUL")
+                // 🚨 여기도 output_coord=KTM 으로 변경!
+                val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 // 🚨 반드시 카카오 개발자 센터의 'REST API 키'를 넣으세요!
@@ -434,12 +436,8 @@ class MainActivity : AppCompatActivity(),
                     val res = conn.inputStream.bufferedReader().readText()
                     val docs = JSONObject(res).getJSONArray("documents")
                     if (docs.length() > 0) {
-                        val wX = docs.getJSONObject(0).getDouble("x")
-                        val wY = docs.getJSONObject(0).getDouble("y")
-
-                        // 💡 2.5로 나누어 KATEC으로 변환
-                        val katecX = (wX / 2.5).toInt()
-                        val katecY = (wY / 2.5).toInt()
+                        val katecX = docs.getJSONObject(0).getDouble("x").toInt()
+                        val katecY = docs.getJSONObject(0).getDouble("y").toInt()
 
                         withContext(Dispatchers.Main) {
                             fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
@@ -447,7 +445,11 @@ class MainActivity : AppCompatActivity(),
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val startKatec = convertWGS84ToKATEC(loc.latitude, loc.longitude)
                                         if (startKatec != null) {
-                                            val startPoi = KNPOI("현재 위치", startKatec.first, startKatec.second, "")
+                                            val matchedLocation = KNSDK.sharedGuidance()?.locationGuide?.location
+                                            val startX = matchedLocation?.pos?.x?.toInt() ?: startKatec.first
+                                            val startY = matchedLocation?.pos?.y?.toInt() ?: startKatec.second
+
+                                            val startPoi = KNPOI("현재 위치", startX, startY, "")
                                             val goalPoi = KNPOI(name, katecX, katecY, "")
                                             withContext(Dispatchers.Main) {
                                                 startNavigationWithWaypoints(startPoi, goalPoi, mutableListOf())
