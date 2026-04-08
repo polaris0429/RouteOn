@@ -59,7 +59,7 @@
                 android:id="@+id/btn_refresh_list"
                 android:layout_width="match_parent"
                 android:layout_height="55dp"
-                android:text="목록 새로고침"
+                android:text="새로고침"
                 android:backgroundTint="#03C75A"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
