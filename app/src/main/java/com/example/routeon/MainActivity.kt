@@ -74,7 +74,6 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-// 💡 경유지 및 목적지 데이터를 저장할 모델 클래스
 data class RouteStop(
     val id: String,
     val name: String,
@@ -101,7 +100,6 @@ class MainActivity : AppCompatActivity(),
     private val httpClient = OkHttpClient()
     private var webSocket: WebSocket? = null
 
-    // 💡 주행 상태 관리를 위한 변수들
     private var currentNaviTripId: String? = null
     private val currentStops = mutableListOf<RouteStop>()
 
@@ -124,6 +122,10 @@ class MainActivity : AppCompatActivity(),
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         setupBottomNavigation()
+
+        // 💡 1. 앱 실행 시 첫 화면을 내비게이션(지도)으로 강제 전환
+        binding.bottomNav.selectedItemId = R.id.nav_map
+
         setupSettingsUI()
         setupRunListUI()
         checkLocationPermission()
@@ -132,10 +134,8 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 💡 [추가 기능] 배송 완료 / 취소 상태 업데이트 로직
+    // 배송 완료 / 취소 상태 업데이트 로직
     // =========================================================================
-
-    // 1. 운행 전체 완료 및 취소 (PATCH /trips/{id}/status)
     private fun updateTripStatus(tripId: String, status: String) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
@@ -154,7 +154,7 @@ class MainActivity : AppCompatActivity(),
                             binding.btnCompleteTrip.visibility = View.GONE
                             currentNaviTripId = null
                             currentStops.clear()
-                            fetchTrips() // 목록 새로고침
+                            fetchTrips()
                         }
                     }
                 } else {
@@ -164,11 +164,9 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // 2. 개별 배송지 수동 완료 (PATCH /deliveries/{id}/complete)
     private fun completeDelivery(deliveryId: String, name: String) {
         if (deliveryId.isEmpty()) {
             Toast.makeText(this, "배송지 ID가 없어 완료할 수 없습니다.", Toast.LENGTH_SHORT).show()
-            // 버튼 사라지도록 임시 제외
             currentStops.removeAll { it.name == name }
             binding.btnCompleteTrip.visibility = View.GONE
             return
@@ -186,7 +184,7 @@ class MainActivity : AppCompatActivity(),
                 if (responseCode == 200 || responseCode == 204) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(this@MainActivity, "📦 '$name' 배송이 완료 처리되었습니다!", Toast.LENGTH_SHORT).show()
-                        currentStops.removeAll { it.id == deliveryId } // 목록에서 지워 버튼이 다시 안 뜨게 함
+                        currentStops.removeAll { it.id == deliveryId }
                         binding.btnCompleteTrip.visibility = View.GONE
                     }
                 } else {
@@ -196,7 +194,6 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // 3. 실시간 위치 기반 목적지 거리 감시 (100m 이내 판별)
     private fun checkProximityToStops(currentLat: Double, currentLng: Double) {
         var nearbyStop: RouteStop? = null
 
@@ -205,7 +202,7 @@ class MainActivity : AppCompatActivity(),
             android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, results)
             val distanceInMeters = results[0]
 
-            if (distanceInMeters <= 100) { // 100m 이내 진입 시
+            if (distanceInMeters <= 100) {
                 nearbyStop = stop
                 break
             }
@@ -215,16 +212,15 @@ class MainActivity : AppCompatActivity(),
             if (nearbyStop != null) {
                 binding.btnCompleteTrip.visibility = View.VISIBLE
 
-                // 최종 목적지인지, 일반 경유지인지에 따라 기능과 색상 분리
                 if (nearbyStop.type == "destination") {
                     binding.btnCompleteTrip.text = "🏁 운행 전체 완료 (목적지 도착)"
-                    binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#2E7D32")) // 초록색
+                    binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#2E7D32"))
                     binding.btnCompleteTrip.setOnClickListener {
                         currentNaviTripId?.let { updateTripStatus(it, "completed") }
                     }
                 } else {
                     binding.btnCompleteTrip.text = "📦 배송지 수동 완료 (${nearbyStop.name})"
-                    binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#0288D1")) // 파란색
+                    binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#0288D1"))
                     binding.btnCompleteTrip.setOnClickListener {
                         completeDelivery(nearbyStop.id, nearbyStop.name)
                     }
@@ -354,7 +350,7 @@ class MainActivity : AppCompatActivity(),
 
 
     // =========================================================================
-    // 운행 목록 갱신 (운행 취소 버튼 추가 적용)
+    // 운행 목록 갱신
     // =========================================================================
     private fun setupRunListUI() {
         val btnRefresh = findViewById<Button>(R.id.btn_refresh_list)
@@ -431,7 +427,6 @@ class MainActivity : AppCompatActivity(),
                 setPadding(0, 8, 0, 20)
             }
 
-            // 💡 시작 버튼과 취소 버튼을 나란히 배치
             val btnLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -443,7 +438,7 @@ class MainActivity : AppCompatActivity(),
                 backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#03C75A"))
                 setTextColor(android.graphics.Color.WHITE)
                 setOnClickListener {
-                    currentNaviTripId = tripId // 주행 중인 Trip ID 저장
+                    currentNaviTripId = tripId
                     fusedLocationClient.lastLocation.addOnSuccessListener { location ->
                         if (location != null) {
                             optimizeAndStartNavi(tripId, destName, lat, lng, location.latitude, location.longitude)
@@ -483,7 +478,7 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 경로 최적화 및 파싱 로직 (경유지 데이터 저장)
+    // 경로 최적화 및 파싱 로직
     // =========================================================================
     private suspend fun convertWGS84ToKATEC(lat: Double, lng: Double): Pair<Int, Int>? {
         if (lat < 30.0 || lng < 120.0) return null
@@ -493,8 +488,8 @@ class MainActivity : AppCompatActivity(),
                 val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                // 🚨 REST API 키
-                conn.setRequestProperty("Authorization", "KakaoAK 여기에_REST_API_키를_넣으세요")
+                // 🚨 REST API 키 (KakaoAK 뒤에 키 입력)
+                conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
 
@@ -562,7 +557,6 @@ class MainActivity : AppCompatActivity(),
             var finalDestLat = fallbackLat
             var finalDestLng = fallbackLng
 
-            // 💡 새로운 경로로 바뀔 때마다 목적지 리스트를 비우고 다시 채웁니다.
             currentStops.clear()
 
             for (i in 0 until optimizedArray.length()) {
@@ -572,10 +566,8 @@ class MainActivity : AppCompatActivity(),
                 val lat = pt.optDouble("lat", 0.0)
                 val lng = pt.optDouble("lon", pt.optDouble("lng", 0.0))
 
-                // 백엔드가 id나 delivery_id를 주면 추출, 없으면 빈 문자열
                 val deliveryId = pt.optString("delivery_id", pt.optString("id", ""))
 
-                // 목적지 반경 감시 목록에 추가
                 if (type == "waypoint" || type == "destination") {
                     currentStops.add(RouteStop(deliveryId, name, lat, lng, type))
                 }
@@ -635,13 +627,15 @@ class MainActivity : AppCompatActivity(),
                             naviView = KNNaviView(this@MainActivity)
                             binding.naviContainer.addView(naviView)
 
-                            naviView.useDarkMode = binding.switchDarkMode.isChecked
-                            naviView.fuelType = when (binding.rgFuel.checkedRadioButtonId) {
+                            // 💡 안내 시작할 때 저장된 설정값 불러와서 적용
+                            val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                            naviView.useDarkMode = sharedPref.getBoolean("dark_mode", false)
+                            naviView.fuelType = when (sharedPref.getInt("fuel_type", R.id.rb_fuel_gasoline)) {
                                 R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
                                 R.id.rb_fuel_electric -> KNCarFuel.KNCarFuel_Electric
                                 else -> KNCarFuel.KNCarFuel_Gasoline
                             }
-                            naviView.carType = when (binding.rgCarType.checkedRadioButtonId) {
+                            naviView.carType = when (sharedPref.getInt("car_type", R.id.rb_car_type_1)) {
                                 R.id.rb_car_type_4 -> KNCarType.KNCarType_4
                                 R.id.rb_car_type_bike -> KNCarType.KNCarType_Bike
                                 else -> KNCarType.KNCarType_1
@@ -668,7 +662,7 @@ class MainActivity : AppCompatActivity(),
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 // 🚨 REST API 키
-                conn.setRequestProperty("Authorization", "KakaoAK 여기에_REST_API_키를_넣으세요")
+                conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
 
@@ -720,8 +714,6 @@ class MainActivity : AppCompatActivity(),
             override fun onLocationResult(locationResult: LocationResult) {
                 locationResult.lastLocation?.let { location ->
                     sendLocationToServer(location.latitude, location.longitude, location.speed)
-
-                    // 💡 5초마다 현재 위치와 목적지들 사이의 거리를 계산하여 버튼을 띄울지 판단합니다!
                     checkProximityToStops(location.latitude, location.longitude)
                 }
             }
@@ -923,6 +915,9 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
+    // =========================================================================
+    // 💡 2. 설정값 저장 및 불러오기 (SharedPreferences 활용)
+    // =========================================================================
     @SuppressLint("SetTextI18n")
     private fun setupSettingsUI() {
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
@@ -930,12 +925,31 @@ class MainActivity : AppCompatActivity(),
         binding.tvMyId.text = "아이디: $savedUsername"
         binding.tvMyPhone.text = "연락처: 조회 필요"
 
+        // 💡 2-1. 스마트폰에 저장된 설정값 불러오기
+        val isDarkMode = sharedPref.getBoolean("dark_mode", false)
+        val fuelType = sharedPref.getInt("fuel_type", R.id.rb_fuel_gasoline)
+        val carType = sharedPref.getInt("car_type", R.id.rb_car_type_1)
+
+        // 💡 2-2. 불러온 설정값을 UI 화면에 표시
+        binding.switchDarkMode.isChecked = isDarkMode
+        binding.rgFuel.check(fuelType)
+        binding.rgCarType.check(carType)
+
+        // 초기 앱 다크모드 적용
+        AppCompatDelegate.setDefaultNightMode(
+            if (isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        )
+
+        // 💡 2-3. 스위치/버튼을 누를 때마다 값을 SharedPreferences 에 저장
         binding.switchDarkMode.setOnCheckedChangeListener { _, isChecked ->
+            sharedPref.edit { putBoolean("dark_mode", isChecked) } // 자동 저장
             if (::naviView.isInitialized) naviView.useDarkMode = isChecked
             if (isChecked) AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             else AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         }
+
         binding.rgFuel.setOnCheckedChangeListener { _, checkedId ->
+            sharedPref.edit { putInt("fuel_type", checkedId) } // 자동 저장
             if (!::naviView.isInitialized) return@setOnCheckedChangeListener
             naviView.fuelType = when (checkedId) {
                 R.id.rb_fuel_diesel -> KNCarFuel.KNCarFuel_Diesel
@@ -943,7 +957,9 @@ class MainActivity : AppCompatActivity(),
                 else -> KNCarFuel.KNCarFuel_Gasoline
             }
         }
+
         binding.rgCarType.setOnCheckedChangeListener { _, checkedId ->
+            sharedPref.edit { putInt("car_type", checkedId) } // 자동 저장
             if (!::naviView.isInitialized) return@setOnCheckedChangeListener
             naviView.carType = when (checkedId) {
                 R.id.rb_car_type_4 -> KNCarType.KNCarType_4
@@ -951,6 +967,7 @@ class MainActivity : AppCompatActivity(),
                 else -> KNCarType.KNCarType_1
             }
         }
+
         binding.btnEditInfo.setOnClickListener { showEditSelectionDialog() }
         binding.btnLogout.setOnClickListener { showLogoutDialog() }
     }
@@ -993,7 +1010,11 @@ class MainActivity : AppCompatActivity(),
                     runOnUiThread {
                         naviView = KNNaviView(this@MainActivity)
                         binding.naviContainer.addView(naviView)
-                        naviView.useDarkMode = binding.switchDarkMode.isChecked
+
+                        // 앱 최초 실행(초기화) 시 저장된 설정(다크모드 등) 즉시 반영
+                        val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                        naviView.useDarkMode = sharedPref.getBoolean("dark_mode", false)
+
                         startSafeDriving()
                     }
                 }
@@ -1026,6 +1047,10 @@ class MainActivity : AppCompatActivity(),
             binding.naviContainer.removeAllViews()
             naviView = KNNaviView(this@MainActivity)
             binding.naviContainer.addView(naviView)
+
+            // 종료 후 기본 화면으로 돌아갈 때도 설정 반영
+            val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+            naviView.useDarkMode = sharedPref.getBoolean("dark_mode", false)
             startSafeDriving()
         }
     }
