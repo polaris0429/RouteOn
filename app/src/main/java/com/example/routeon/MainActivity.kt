@@ -89,7 +89,6 @@ class MainActivity : AppCompatActivity(),
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
 
-    // 💡 웹소켓 관련 변수 추가
     private val httpClient = OkHttpClient()
     private var webSocket: WebSocket? = null
 
@@ -116,23 +115,22 @@ class MainActivity : AppCompatActivity(),
         setupRunListUI()
         checkLocationPermission()
 
-        // 💡 앱 실행 시 웹소켓 연결
         connectWebSocket()
     }
 
     // =========================================================================
-    // 💡 WebSocket 실시간 알림 수신 로직 (replan_requested)
+    // 💡 WebSocket 실시간 이벤트 파싱 로직
     // =========================================================================
     private fun connectWebSocket() {
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val token = sharedPref.getString("access_token", null) ?: return
 
-        // 🚨 백엔드 팀원에게 "WebSocket 주소(ws://...)"가 맞는지 꼭 확인해 주세요!
+        // 💡 확인하신 /ws/location 주소로 연결!
         val wsUrl = "ws://swc.ddns.net:8000/ws/location"
 
         val request = Request.Builder()
             .url(wsUrl)
-            .addHeader("Authorization", "Bearer $token") // 토큰 인증
+            .addHeader("Authorization", "Bearer $token")
             .build()
 
         val listener = object : WebSocketListener() {
@@ -145,13 +143,14 @@ class MainActivity : AppCompatActivity(),
                 Log.d("WebSocket", "수신된 메시지: $text")
                 try {
                     val json = JSONObject(text)
+
+                    // 🚨 이벤트 1: 관리자가 경로를 수정하여 'replan_requested' 타입이 온 경우
                     if (json.optString("type") == "replan_requested") {
-                        val message = json.optString("message", "관리자가 경로를 수정했습니다. 재탐색합니다.")
+                        val message = json.optString("message", "새로운 긴급 경유지가 추가되었습니다. 재탐색합니다.")
                         val tripId = json.optString("trip_id")
                         val waypointsArray = json.optJSONArray("waypoints") ?: JSONArray()
 
                         runOnUiThread {
-                            // 화면 중앙에 큰 경고창 띄우기
                             AlertDialog.Builder(this@MainActivity)
                                 .setTitle("🚨 경로 변경 알림")
                                 .setMessage(message)
@@ -160,12 +159,23 @@ class MainActivity : AppCompatActivity(),
                                         if (loc != null) {
                                             requestReplan(tripId, loc.latitude, loc.longitude, waypointsArray)
                                         } else {
-                                            Toast.makeText(this@MainActivity, "GPS 위치를 찾을 수 없어 재계산이 불가합니다.", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(this@MainActivity, "GPS를 찾을 수 없어 재계산 불가", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
                                 .setCancelable(false)
                                 .show()
+                        }
+                    }
+                    // 🚨 이벤트 2: 기사님이 50m 이내로 접근하여 도착(arrived_deliveries) 처리된 경우
+                    else {
+                        val arrivedArray = json.optJSONArray("arrived_deliveries")
+                        if (arrivedArray != null && arrivedArray.length() > 0) {
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "✅ 목적지에 도착하여 배송이 자동 완료 처리되었습니다!", Toast.LENGTH_LONG).show()
+                                // 완료되었으므로 화면의 배차 목록을 새로고침하여 지웁니다.
+                                fetchTrips()
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -180,9 +190,6 @@ class MainActivity : AppCompatActivity(),
         webSocket = httpClient.newWebSocket(request, listener)
     }
 
-    // =========================================================================
-    // 💡 POST /optimize/replan 재경로 탐색 요청
-    // =========================================================================
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, waypointsArray: JSONArray) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         Toast.makeText(this, "새로운 경로를 서버에서 계산 중입니다...", Toast.LENGTH_LONG).show()
@@ -198,7 +205,6 @@ class MainActivity : AppCompatActivity(),
                 conn.readTimeout = 15000
                 conn.doOutput = true
 
-                // 💡 전달받은 waypoints 배열에서 마지막 원소는 목적지, 나머지는 잔여 경유지로 분리합니다.
                 var destName = "목적지"
                 var destLat = 0.0
                 var destLon = 0.0
@@ -221,7 +227,7 @@ class MainActivity : AppCompatActivity(),
                     put("current_name", "현재 위치")
                     put("current_lat", currentLat)
                     put("current_lon", currentLng)
-                    put("current_drive_sec", 0) // 임시 주행 시간
+                    put("current_drive_sec", 0)
                     put("remaining_waypoints", remainingWaypoints)
                     put("dest_name", destName)
                     put("dest_lat", destLat)
@@ -237,13 +243,12 @@ class MainActivity : AppCompatActivity(),
                     Log.d("BackendData", "REPLAN 응답: $responseData")
                     val jsonResponse = JSONObject(responseData)
 
-                    // 재활용 함수를 호출해 카카오 내비 화면을 새로고침합니다.
                     parseAndStartNavi(jsonResponse, currentLat, currentLng, destName, destLat, destLon)
                 } else {
                     withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 계산 실패 (${conn.responseCode})", Toast.LENGTH_SHORT).show() }
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 서버 통신 오류", Toast.LENGTH_SHORT).show() }
+                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 서버 오류", Toast.LENGTH_SHORT).show() }
             }
         }
     }
@@ -369,7 +374,7 @@ class MainActivity : AppCompatActivity(),
                 val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                // 🚨 REST API 키 유지
+                // 🚨 REST API 키 (KakaoAK 뒤에 키 입력)
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
@@ -420,7 +425,6 @@ class MainActivity : AppCompatActivity(),
                     val responseData = conn.inputStream.bufferedReader().use { it.readText() }
                     val jsonResponse = JSONObject(responseData)
 
-                    // 💡 재활용 함수를 통해 화면을 그립니다.
                     parseAndStartNavi(jsonResponse, currentLat, currentLng, destName, destLat, destLng)
                 } else {
                     withContext(Dispatchers.Main) {
@@ -435,7 +439,6 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // 💡 [핵심] optimize 와 replan 에서 공통으로 사용하는 'JSON 파싱 및 내비 시작' 함수입니다.
     private suspend fun parseAndStartNavi(jsonResponse: JSONObject, currentLat: Double, currentLng: Double, fallbackDestName: String, fallbackLat: Double, fallbackLng: Double) {
         val optimizedArray = jsonResponse.optJSONArray("route")
             ?: jsonResponse.optJSONArray("optimized_route")
@@ -481,7 +484,7 @@ class MainActivity : AppCompatActivity(),
                 val goalPoi = KNPOI(finalDestName, goalKatec.first, goalKatec.second, "")
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "새로운 경로 안내를 시작합니다!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "최적화 완료! 새로운 경로로 안내합니다.", Toast.LENGTH_LONG).show()
                     startNavigationWithWaypoints(startPoi, goalPoi, viaList)
                 }
             } else {
@@ -701,13 +704,14 @@ class MainActivity : AppCompatActivity(),
     private fun startLocationUpdates() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 30000)
-            .setMinUpdateIntervalMillis(30000)
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+            .setMinUpdateIntervalMillis(5000)
             .build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 locationResult.lastLocation?.let { location ->
+                    // 위치가 갱신될 때마다 소켓을 통해 관리자 웹으로도 전송되도록 처리!
                     sendLocationToServer(location.latitude, location.longitude, location.speed)
                 }
             }
@@ -722,6 +726,7 @@ class MainActivity : AppCompatActivity(),
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // 1. 기존 REST API 위치 저장
                 val url = URL("http://swc.ddns.net:8000/location-logs")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
@@ -740,6 +745,11 @@ class MainActivity : AppCompatActivity(),
 
                 OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
                 conn.responseCode
+
+                // 2. 관리자 지도 실시간 반응을 위한 소켓 ping (연결 유지)
+                if (webSocket != null) {
+                    webSocket?.send(jsonParam.toString())
+                }
             } catch (e: Exception) { }
         }
     }
@@ -841,11 +851,15 @@ class MainActivity : AppCompatActivity(),
 
     override fun onDestroy() {
         super.onDestroy()
-        webSocket?.cancel() // 💡 소켓 종료
+        webSocket?.cancel() // 💡 앱 종료 시 소켓 연결 끊기
         if (::fusedLocationClient.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
     }
+
+    // =========================================================================
+    // 카카오 내비게이션 초기화 및 델리게이트
+    // =========================================================================
 
     private fun initKakaoNaviSDK() {
         KNSDK.initializeWithAppKey(
