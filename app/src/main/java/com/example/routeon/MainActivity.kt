@@ -74,6 +74,15 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
+// 💡 경유지 및 목적지 데이터를 저장할 모델 클래스
+data class RouteStop(
+    val id: String,
+    val name: String,
+    val lat: Double,
+    val lng: Double,
+    val type: String
+)
+
 class MainActivity : AppCompatActivity(),
     KNGuidance_GuideStateDelegate,
     KNGuidance_LocationGuideDelegate,
@@ -91,6 +100,10 @@ class MainActivity : AppCompatActivity(),
 
     private val httpClient = OkHttpClient()
     private var webSocket: WebSocket? = null
+
+    // 💡 주행 상태 관리를 위한 변수들
+    private var currentNaviTripId: String? = null
+    private val currentStops = mutableListOf<RouteStop>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,13 +132,115 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 💡 WebSocket 실시간 이벤트 파싱 로직
+    // 💡 [추가 기능] 배송 완료 / 취소 상태 업데이트 로직
+    // =========================================================================
+
+    // 1. 운행 전체 완료 및 취소 (PATCH /trips/{id}/status)
+    private fun updateTripStatus(tripId: String, status: String) {
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/trips/$tripId/status?status=$status")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "PATCH"
+                conn.setRequestProperty("Authorization", "Bearer $token")
+
+                val responseCode = conn.responseCode
+                if (responseCode == 200 || responseCode == 204) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "운행이 ${if(status=="completed") "완료" else "취소"}되었습니다.", Toast.LENGTH_SHORT).show()
+                        if (status == "completed" || status == "cancelled") {
+                            KNSDK.sharedGuidance()?.stop()
+                            binding.btnCompleteTrip.visibility = View.GONE
+                            currentNaviTripId = null
+                            currentStops.clear()
+                            fetchTrips() // 목록 새로고침
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "상태 업데이트 실패 ($responseCode)", Toast.LENGTH_SHORT).show() }
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    // 2. 개별 배송지 수동 완료 (PATCH /deliveries/{id}/complete)
+    private fun completeDelivery(deliveryId: String, name: String) {
+        if (deliveryId.isEmpty()) {
+            Toast.makeText(this, "배송지 ID가 없어 완료할 수 없습니다.", Toast.LENGTH_SHORT).show()
+            // 버튼 사라지도록 임시 제외
+            currentStops.removeAll { it.name == name }
+            binding.btnCompleteTrip.visibility = View.GONE
+            return
+        }
+
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/deliveries/$deliveryId/complete")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "PATCH"
+                conn.setRequestProperty("Authorization", "Bearer $token")
+
+                val responseCode = conn.responseCode
+                if (responseCode == 200 || responseCode == 204) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "📦 '$name' 배송이 완료 처리되었습니다!", Toast.LENGTH_SHORT).show()
+                        currentStops.removeAll { it.id == deliveryId } // 목록에서 지워 버튼이 다시 안 뜨게 함
+                        binding.btnCompleteTrip.visibility = View.GONE
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "배송 수동 완료 실패", Toast.LENGTH_SHORT).show() }
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    // 3. 실시간 위치 기반 목적지 거리 감시 (100m 이내 판별)
+    private fun checkProximityToStops(currentLat: Double, currentLng: Double) {
+        var nearbyStop: RouteStop? = null
+
+        for (stop in currentStops) {
+            val results = FloatArray(1)
+            android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, results)
+            val distanceInMeters = results[0]
+
+            if (distanceInMeters <= 100) { // 100m 이내 진입 시
+                nearbyStop = stop
+                break
+            }
+        }
+
+        runOnUiThread {
+            if (nearbyStop != null) {
+                binding.btnCompleteTrip.visibility = View.VISIBLE
+
+                // 최종 목적지인지, 일반 경유지인지에 따라 기능과 색상 분리
+                if (nearbyStop.type == "destination") {
+                    binding.btnCompleteTrip.text = "🏁 운행 전체 완료 (목적지 도착)"
+                    binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#2E7D32")) // 초록색
+                    binding.btnCompleteTrip.setOnClickListener {
+                        currentNaviTripId?.let { updateTripStatus(it, "completed") }
+                    }
+                } else {
+                    binding.btnCompleteTrip.text = "📦 배송지 수동 완료 (${nearbyStop.name})"
+                    binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#0288D1")) // 파란색
+                    binding.btnCompleteTrip.setOnClickListener {
+                        completeDelivery(nearbyStop.id, nearbyStop.name)
+                    }
+                }
+            } else {
+                binding.btnCompleteTrip.visibility = View.GONE
+            }
+        }
+    }
+
+    // =========================================================================
+    // WebSocket 연결 로직
     // =========================================================================
     private fun connectWebSocket() {
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val token = sharedPref.getString("access_token", null) ?: return
-
-        // 💡 확인하신 /ws/location 주소로 연결!
         val wsUrl = "ws://swc.ddns.net:8000/ws/location"
 
         val request = Request.Builder()
@@ -140,11 +255,8 @@ class MainActivity : AppCompatActivity(),
 
             @SuppressLint("MissingPermission")
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d("WebSocket", "수신된 메시지: $text")
                 try {
                     val json = JSONObject(text)
-
-                    // 🚨 이벤트 1: 관리자가 경로를 수정하여 'replan_requested' 타입이 온 경우
                     if (json.optString("type") == "replan_requested") {
                         val message = json.optString("message", "새로운 긴급 경유지가 추가되었습니다. 재탐색합니다.")
                         val tripId = json.optString("trip_id")
@@ -166,25 +278,16 @@ class MainActivity : AppCompatActivity(),
                                 .setCancelable(false)
                                 .show()
                         }
-                    }
-                    // 🚨 이벤트 2: 기사님이 50m 이내로 접근하여 도착(arrived_deliveries) 처리된 경우
-                    else {
+                    } else {
                         val arrivedArray = json.optJSONArray("arrived_deliveries")
                         if (arrivedArray != null && arrivedArray.length() > 0) {
                             runOnUiThread {
                                 Toast.makeText(this@MainActivity, "✅ 목적지에 도착하여 배송이 자동 완료 처리되었습니다!", Toast.LENGTH_LONG).show()
-                                // 완료되었으므로 화면의 배차 목록을 새로고침하여 지웁니다.
                                 fetchTrips()
                             }
                         }
                     }
-                } catch (e: Exception) {
-                    Log.e("WebSocket", "메시지 파싱 에러: ${e.message}")
-                }
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("WebSocket", "소켓 에러: ${t.message}")
+                } catch (e: Exception) { }
             }
         }
         webSocket = httpClient.newWebSocket(request, listener)
@@ -240,22 +343,18 @@ class MainActivity : AppCompatActivity(),
 
                 if (conn.responseCode == 200 || conn.responseCode == 201) {
                     val responseData = conn.inputStream.bufferedReader().use { it.readText() }
-                    Log.d("BackendData", "REPLAN 응답: $responseData")
                     val jsonResponse = JSONObject(responseData)
-
                     parseAndStartNavi(jsonResponse, currentLat, currentLng, destName, destLat, destLon)
                 } else {
                     withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 계산 실패 (${conn.responseCode})", Toast.LENGTH_SHORT).show() }
                 }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 서버 오류", Toast.LENGTH_SHORT).show() }
-            }
+            } catch (e: Exception) {}
         }
     }
 
 
     // =========================================================================
-    // 기존 운행 목록, 일반 길안내 로직 등
+    // 운행 목록 갱신 (운행 취소 버튼 추가 적용)
     // =========================================================================
     private fun setupRunListUI() {
         val btnRefresh = findViewById<Button>(R.id.btn_refresh_list)
@@ -268,7 +367,6 @@ class MainActivity : AppCompatActivity(),
 
     private fun fetchTrips() {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
-
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val url = URL("http://swc.ddns.net:8000/trips")
@@ -283,9 +381,7 @@ class MainActivity : AppCompatActivity(),
                     val jsonArray = JSONArray(responseData)
                     withContext(Dispatchers.Main) { renderRunList(jsonArray) }
                 }
-            } catch (e: Exception) {
-                Log.e("FetchTrips", "목록 갱신 실패: ${e.message}")
-            }
+            } catch (e: Exception) { }
         }
     }
 
@@ -313,18 +409,12 @@ class MainActivity : AppCompatActivity(),
             val status = obj.optString("status", "대기")
 
             val itemLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                orientation = LinearLayout.VERTICAL
                 setPadding(40, 40, 40, 40)
                 val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
                 params.bottomMargin = 24
                 layoutParams = params
                 setBackgroundResource(android.R.drawable.btn_default)
-            }
-
-            val textLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
 
             val titleTv = TextView(this).apply {
@@ -338,15 +428,22 @@ class MainActivity : AppCompatActivity(),
                 text = "상태: $status"
                 textSize = 14f
                 setTextColor(android.graphics.Color.DKGRAY)
-                setPadding(0, 8, 0, 0)
+                setPadding(0, 8, 0, 20)
             }
 
-            textLayout.addView(titleTv)
-            textLayout.addView(statusTv)
+            // 💡 시작 버튼과 취소 버튼을 나란히 배치
+            val btnLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            }
 
-            val btn = Button(this).apply {
+            val btnStart = Button(this).apply {
                 text = "안내 시작"
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#03C75A"))
+                setTextColor(android.graphics.Color.WHITE)
                 setOnClickListener {
+                    currentNaviTripId = tripId // 주행 중인 Trip ID 저장
                     fusedLocationClient.lastLocation.addOnSuccessListener { location ->
                         if (location != null) {
                             optimizeAndStartNavi(tripId, destName, lat, lng, location.latitude, location.longitude)
@@ -360,12 +457,34 @@ class MainActivity : AppCompatActivity(),
                 }
             }
 
-            itemLayout.addView(textLayout)
-            itemLayout.addView(btn)
+            val btnCancel = Button(this).apply {
+                text = "운행 취소"
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = 20 }
+                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#E74C3C"))
+                setTextColor(android.graphics.Color.WHITE)
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("운행 취소")
+                        .setMessage("정말 이 배차를 취소하시겠습니까?")
+                        .setPositiveButton("예") { _, _ -> updateTripStatus(tripId, "cancelled") }
+                        .setNegativeButton("아니오", null)
+                        .show()
+                }
+            }
+
+            btnLayout.addView(btnStart)
+            btnLayout.addView(btnCancel)
+
+            itemLayout.addView(titleTv)
+            itemLayout.addView(statusTv)
+            itemLayout.addView(btnLayout)
             container.addView(itemLayout)
         }
     }
 
+    // =========================================================================
+    // 경로 최적화 및 파싱 로직 (경유지 데이터 저장)
+    // =========================================================================
     private suspend fun convertWGS84ToKATEC(lat: Double, lng: Double): Pair<Int, Int>? {
         if (lat < 30.0 || lng < 120.0) return null
 
@@ -374,8 +493,8 @@ class MainActivity : AppCompatActivity(),
                 val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                // 🚨 REST API 키 (KakaoAK 뒤에 키 입력)
-                conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
+                // 🚨 REST API 키
+                conn.setRequestProperty("Authorization", "KakaoAK 여기에_REST_API_키를_넣으세요")
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
 
@@ -388,9 +507,7 @@ class MainActivity : AppCompatActivity(),
                         return@withContext Pair(x, y)
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("KakaoAPI", "통신 에러: ${e.javaClass.simpleName}")
-            }
+            } catch (e: Exception) {}
             return@withContext null
         }
     }
@@ -424,17 +541,12 @@ class MainActivity : AppCompatActivity(),
                 if (conn.responseCode == 200 || conn.responseCode == 201) {
                     val responseData = conn.inputStream.bufferedReader().use { it.readText() }
                     val jsonResponse = JSONObject(responseData)
-
                     parseAndStartNavi(jsonResponse, currentLat, currentLng, destName, destLat, destLng)
                 } else {
-                    withContext(Dispatchers.Main) {
-                        startNavigationWithWGS84(destName, destLat, destLng)
-                    }
+                    withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    startNavigationWithWGS84(destName, destLat, destLng)
-                }
+                withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
             }
         }
     }
@@ -450,12 +562,23 @@ class MainActivity : AppCompatActivity(),
             var finalDestLat = fallbackLat
             var finalDestLng = fallbackLng
 
+            // 💡 새로운 경로로 바뀔 때마다 목적지 리스트를 비우고 다시 채웁니다.
+            currentStops.clear()
+
             for (i in 0 until optimizedArray.length()) {
                 val pt = optimizedArray.getJSONObject(i)
                 val type = pt.optString("type", "")
                 val name = pt.optString("name", "경유지 ${i + 1}")
                 val lat = pt.optDouble("lat", 0.0)
                 val lng = pt.optDouble("lon", pt.optDouble("lng", 0.0))
+
+                // 백엔드가 id나 delivery_id를 주면 추출, 없으면 빈 문자열
+                val deliveryId = pt.optString("delivery_id", pt.optString("id", ""))
+
+                // 목적지 반경 감시 목록에 추가
+                if (type == "waypoint" || type == "destination") {
+                    currentStops.add(RouteStop(deliveryId, name, lat, lng, type))
+                }
 
                 when (type) {
                     "waypoint", "rest_stop" -> {
@@ -484,7 +607,7 @@ class MainActivity : AppCompatActivity(),
                 val goalPoi = KNPOI(finalDestName, goalKatec.first, goalKatec.second, "")
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "최적화 완료! 새로운 경로로 안내합니다.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "최적화 완료! 경로 안내를 시작합니다.", Toast.LENGTH_SHORT).show()
                     startNavigationWithWaypoints(startPoi, goalPoi, viaList)
                 }
             } else {
@@ -540,13 +663,12 @@ class MainActivity : AppCompatActivity(),
     private fun startNavigationWithWGS84(name: String, lat: Double, lng: Double) {
         CoroutineScope(Dispatchers.IO).launch {
             if (lat < 30.0 || lng < 120.0) return@launch
-
             try {
                 val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                // 🚨 REST API 키 유지
-                conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
+                // 🚨 REST API 키
+                conn.setRequestProperty("Authorization", "KakaoAK 여기에_REST_API_키를_넣으세요")
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
 
@@ -584,8 +706,61 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 기타 세팅 및 GPS 전송
+    // GPS 전송 (5초 주기) & 세팅 메뉴
     // =========================================================================
+    @SuppressLint("MissingPermission")
+    private fun startLocationUpdates() {
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
+            .setMinUpdateIntervalMillis(5000)
+            .build()
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult.lastLocation?.let { location ->
+                    sendLocationToServer(location.latitude, location.longitude, location.speed)
+
+                    // 💡 5초마다 현재 위치와 목적지들 사이의 거리를 계산하여 버튼을 띄울지 판단합니다!
+                    checkProximityToStops(location.latitude, location.longitude)
+                }
+            }
+        }
+        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
+    }
+
+    private fun sendLocationToServer(lat: Double, lng: Double, speed: Float) {
+        val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val token = sharedPref.getString("access_token", null) ?: return
+        val userId = sharedPref.getString("user_id", null) ?: return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/location-logs")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 3000
+                conn.readTimeout = 3000
+                conn.doOutput = true
+
+                val jsonParam = JSONObject().apply {
+                    put("user_id", userId)
+                    put("lat", lat)
+                    put("lon", lng)
+                    put("speed", speed)
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
+                conn.responseCode
+
+                if (webSocket != null) {
+                    webSocket?.send(jsonParam.toString())
+                }
+            } catch (e: Exception) { }
+        }
+    }
 
     private fun updateMyInfoOnServer(jsonParam: JSONObject, onSuccess: () -> Unit) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
@@ -700,60 +875,6 @@ class MainActivity : AppCompatActivity(),
             .show()
     }
 
-    @SuppressLint("MissingPermission")
-    private fun startLocationUpdates() {
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000)
-            .setMinUpdateIntervalMillis(5000)
-            .build()
-
-        locationCallback = object : LocationCallback() {
-            override fun onLocationResult(locationResult: LocationResult) {
-                locationResult.lastLocation?.let { location ->
-                    // 위치가 갱신될 때마다 소켓을 통해 관리자 웹으로도 전송되도록 처리!
-                    sendLocationToServer(location.latitude, location.longitude, location.speed)
-                }
-            }
-        }
-        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
-    }
-
-    private fun sendLocationToServer(lat: Double, lng: Double, speed: Float) {
-        val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-        val token = sharedPref.getString("access_token", null) ?: return
-        val userId = sharedPref.getString("user_id", null) ?: return
-
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // 1. 기존 REST API 위치 저장
-                val url = URL("http://swc.ddns.net:8000/location-logs")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
-                conn.doOutput = true
-
-                val jsonParam = JSONObject().apply {
-                    put("user_id", userId)
-                    put("lat", lat)
-                    put("lon", lng)
-                    put("speed", speed)
-                }
-
-                OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
-                conn.responseCode
-
-                // 2. 관리자 지도 실시간 반응을 위한 소켓 ping (연결 유지)
-                if (webSocket != null) {
-                    webSocket?.send(jsonParam.toString())
-                }
-            } catch (e: Exception) { }
-        }
-    }
-
     private fun checkLocationPermission() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
@@ -851,7 +972,7 @@ class MainActivity : AppCompatActivity(),
 
     override fun onDestroy() {
         super.onDestroy()
-        webSocket?.cancel() // 💡 앱 종료 시 소켓 연결 끊기
+        webSocket?.cancel()
         if (::fusedLocationClient.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
