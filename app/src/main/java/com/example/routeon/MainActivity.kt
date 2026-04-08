@@ -63,6 +63,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -83,6 +88,10 @@ class MainActivity : AppCompatActivity(),
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
+
+    // 💡 웹소켓 관련 변수 추가
+    private val httpClient = OkHttpClient()
+    private var webSocket: WebSocket? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,10 +115,142 @@ class MainActivity : AppCompatActivity(),
         setupSettingsUI()
         setupRunListUI()
         checkLocationPermission()
+
+        // 💡 앱 실행 시 웹소켓 연결
+        connectWebSocket()
     }
 
     // =========================================================================
-    // 💡 GET /trips : 운행 목록 조회
+    // 💡 WebSocket 실시간 알림 수신 로직 (replan_requested)
+    // =========================================================================
+    private fun connectWebSocket() {
+        val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val token = sharedPref.getString("access_token", null) ?: return
+
+        // 🚨 백엔드 팀원에게 "WebSocket 주소(ws://...)"가 맞는지 꼭 확인해 주세요!
+        val wsUrl = "ws://swc.ddns.net:8000/ws/location"
+
+        val request = Request.Builder()
+            .url(wsUrl)
+            .addHeader("Authorization", "Bearer $token") // 토큰 인증
+            .build()
+
+        val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.d("WebSocket", "백엔드 실시간 소켓 연결 성공!")
+            }
+
+            @SuppressLint("MissingPermission")
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                Log.d("WebSocket", "수신된 메시지: $text")
+                try {
+                    val json = JSONObject(text)
+                    if (json.optString("type") == "replan_requested") {
+                        val message = json.optString("message", "관리자가 경로를 수정했습니다. 재탐색합니다.")
+                        val tripId = json.optString("trip_id")
+                        val waypointsArray = json.optJSONArray("waypoints") ?: JSONArray()
+
+                        runOnUiThread {
+                            // 화면 중앙에 큰 경고창 띄우기
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle("🚨 경로 변경 알림")
+                                .setMessage(message)
+                                .setPositiveButton("재안내 시작") { _, _ ->
+                                    fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                                        if (loc != null) {
+                                            requestReplan(tripId, loc.latitude, loc.longitude, waypointsArray)
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "GPS 위치를 찾을 수 없어 재계산이 불가합니다.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                                .setCancelable(false)
+                                .show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("WebSocket", "메시지 파싱 에러: ${e.message}")
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.e("WebSocket", "소켓 에러: ${t.message}")
+            }
+        }
+        webSocket = httpClient.newWebSocket(request, listener)
+    }
+
+    // =========================================================================
+    // 💡 POST /optimize/replan 재경로 탐색 요청
+    // =========================================================================
+    private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, waypointsArray: JSONArray) {
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+        Toast.makeText(this, "새로운 경로를 서버에서 계산 중입니다...", Toast.LENGTH_LONG).show()
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/optimize/replan")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.doOutput = true
+
+                // 💡 전달받은 waypoints 배열에서 마지막 원소는 목적지, 나머지는 잔여 경유지로 분리합니다.
+                var destName = "목적지"
+                var destLat = 0.0
+                var destLon = 0.0
+                val remainingWaypoints = JSONArray()
+
+                if (waypointsArray.length() > 0) {
+                    val lastIdx = waypointsArray.length() - 1
+                    val destObj = waypointsArray.getJSONObject(lastIdx)
+                    destName = destObj.optString("name", "최종 목적지")
+                    destLat = destObj.optDouble("lat", destObj.optDouble("latitude", 0.0))
+                    destLon = destObj.optDouble("lon", destObj.optDouble("longitude", 0.0))
+
+                    for (i in 0 until lastIdx) {
+                        remainingWaypoints.put(waypointsArray.getJSONObject(i))
+                    }
+                }
+
+                val jsonParam = JSONObject().apply {
+                    put("trip_id", tripId)
+                    put("current_name", "현재 위치")
+                    put("current_lat", currentLat)
+                    put("current_lon", currentLng)
+                    put("current_drive_sec", 0) // 임시 주행 시간
+                    put("remaining_waypoints", remainingWaypoints)
+                    put("dest_name", destName)
+                    put("dest_lat", destLat)
+                    put("dest_lon", destLon)
+                    put("is_emergency", true)
+                    put("route_mode", "auto")
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
+
+                if (conn.responseCode == 200 || conn.responseCode == 201) {
+                    val responseData = conn.inputStream.bufferedReader().use { it.readText() }
+                    Log.d("BackendData", "REPLAN 응답: $responseData")
+                    val jsonResponse = JSONObject(responseData)
+
+                    // 재활용 함수를 호출해 카카오 내비 화면을 새로고침합니다.
+                    parseAndStartNavi(jsonResponse, currentLat, currentLng, destName, destLat, destLon)
+                } else {
+                    withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 계산 실패 (${conn.responseCode})", Toast.LENGTH_SHORT).show() }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 서버 통신 오류", Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+
+    // =========================================================================
+    // 기존 운행 목록, 일반 길안내 로직 등
     // =========================================================================
     private fun setupRunListUI() {
         val btnRefresh = findViewById<Button>(R.id.btn_refresh_list)
@@ -134,14 +275,8 @@ class MainActivity : AppCompatActivity(),
 
                 if (conn.responseCode == 200) {
                     val responseData = conn.inputStream.bufferedReader().use { it.readText() }
-                    Log.d("BackendData", "GET /trips 원본 데이터: $responseData")
-
                     val jsonArray = JSONArray(responseData)
-                    withContext(Dispatchers.Main) {
-                        renderRunList(jsonArray)
-                    }
-                } else {
-                    Log.e("FetchTrips", "응답 에러: ${conn.responseCode}")
+                    withContext(Dispatchers.Main) { renderRunList(jsonArray) }
                 }
             } catch (e: Exception) {
                 Log.e("FetchTrips", "목록 갱신 실패: ${e.message}")
@@ -211,7 +346,7 @@ class MainActivity : AppCompatActivity(),
                         if (location != null) {
                             optimizeAndStartNavi(tripId, destName, lat, lng, location.latitude, location.longitude)
                         } else {
-                            Toast.makeText(this@MainActivity, "현재 위치 확인 불가. 일반 안내를 시작합니다.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "위치 확인 불가. 일반 안내 시작", Toast.LENGTH_SHORT).show()
                             startNavigationWithWGS84(destName, lat, lng)
                         }
                     }.addOnFailureListener {
@@ -226,26 +361,20 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // =========================================================================
-    // 💡 좌표 변환 및 서버 최적화 연동 (KTM으로 400 에러 완벽 해결)
-    // =========================================================================
-
     private suspend fun convertWGS84ToKATEC(lat: Double, lng: Double): Pair<Int, Int>? {
-        if (lat < 30.0 || lng < 120.0) return null // 0.0 등 유효하지 않은 좌표 차단
+        if (lat < 30.0 || lng < 120.0) return null
 
         return withContext(Dispatchers.IO) {
             try {
-                // 🚨 카카오 공식 파라미터인 KTM 으로 요청합니다!
                 val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                // 🚨 반드시 카카오 개발자 센터의 'REST API 키'를 넣으세요!
+                // 🚨 REST API 키 유지
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
 
-                val responseCode = conn.responseCode
-                if (responseCode == 200) {
+                if (conn.responseCode == 200) {
                     val res = conn.inputStream.bufferedReader().readText()
                     val docs = JSONObject(res).getJSONArray("documents")
                     if (docs.length() > 0) {
@@ -253,9 +382,6 @@ class MainActivity : AppCompatActivity(),
                         val y = docs.getJSONObject(0).getDouble("y").toInt()
                         return@withContext Pair(x, y)
                     }
-                } else {
-                    val errorStream = conn.errorStream?.bufferedReader()?.readText()
-                    Log.e("KakaoAPI", "카카오 좌표 변환 에러 (코드: $responseCode, 내용: $errorStream)")
                 }
             } catch (e: Exception) {
                 Log.e("KakaoAPI", "통신 에러: ${e.javaClass.simpleName}")
@@ -266,7 +392,7 @@ class MainActivity : AppCompatActivity(),
 
     private fun optimizeAndStartNavi(tripId: String, destName: String, destLat: Double, destLng: Double, currentLat: Double, currentLng: Double) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
-        Toast.makeText(this, "서버에서 경로 최적화 및 휴게소를 계산 중입니다... (최대 15초)", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "경로 최적화 및 휴게소를 계산 중입니다... (최대 15초)", Toast.LENGTH_LONG).show()
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -290,88 +416,82 @@ class MainActivity : AppCompatActivity(),
 
                 OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
 
-                val responseCode = conn.responseCode
-                if (responseCode == 200 || responseCode == 201) {
+                if (conn.responseCode == 200 || conn.responseCode == 201) {
                     val responseData = conn.inputStream.bufferedReader().use { it.readText() }
-                    Log.d("BackendData", "POST /optimize 원본 데이터: $responseData")
-
                     val jsonResponse = JSONObject(responseData)
 
-                    val optimizedArray = jsonResponse.optJSONArray("route")
-                        ?: jsonResponse.optJSONArray("optimized_route")
-                        ?: jsonResponse.optJSONArray("waypoints")
-
-                    if (optimizedArray != null && optimizedArray.length() > 0) {
-                        val viaList = mutableListOf<KNPOI>()
-                        var finalDestName = destName
-                        var finalDestLat = destLat
-                        var finalDestLng = destLng
-
-                        for (i in 0 until optimizedArray.length()) {
-                            val pt = optimizedArray.getJSONObject(i)
-                            val type = pt.optString("type", "")
-                            val name = pt.optString("name", "경유지 ${i + 1}")
-                            val lat = pt.optDouble("lat", 0.0)
-                            val lng = pt.optDouble("lon", pt.optDouble("lng", 0.0))
-
-                            when (type) {
-                                "waypoint", "rest_stop" -> {
-                                    val katec = convertWGS84ToKATEC(lat, lng)
-                                    if (katec != null) {
-                                        viaList.add(KNPOI(name, katec.first, katec.second, ""))
-                                    }
-                                }
-                                "destination" -> {
-                                    finalDestName = name
-                                    finalDestLat = lat
-                                    finalDestLng = lng
-                                }
-                            }
-                        }
-
-                        val startKatec = convertWGS84ToKATEC(currentLat, currentLng)
-                        val goalKatec = convertWGS84ToKATEC(finalDestLat, finalDestLng)
-
-                        if (startKatec != null && goalKatec != null) {
-
-                            // 🚨 'Not found origin link' 방어 로직
-                            val matchedLocation = KNSDK.sharedGuidance()?.locationGuide?.location
-                            val startX = matchedLocation?.pos?.x?.toInt() ?: startKatec.first
-                            val startY = matchedLocation?.pos?.y?.toInt() ?: startKatec.second
-
-                            val startPoi = KNPOI("현재 위치", startX, startY, "")
-                            val goalPoi = KNPOI(finalDestName, goalKatec.first, goalKatec.second, "")
-
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, "최적화 완료! 다중 경유지 안내를 시작합니다.", Toast.LENGTH_LONG).show()
-                                startNavigationWithWaypoints(startPoi, goalPoi, viaList)
-                            }
-                        } else {
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@MainActivity, "카카오 좌표 변환 실패 (REST API 키 확인 필요)", Toast.LENGTH_LONG).show()
-                                startNavigationWithWGS84(destName, destLat, destLng)
-                            }
-                        }
-                    } else {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "서버 최적화 데이터가 비어있음. 일반 안내 시작", Toast.LENGTH_SHORT).show()
-                            startNavigationWithWGS84(destName, destLat, destLng)
-                        }
-                    }
+                    // 💡 재활용 함수를 통해 화면을 그립니다.
+                    parseAndStartNavi(jsonResponse, currentLat, currentLng, destName, destLat, destLng)
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "백엔드 최적화 에러($responseCode). 일반 안내 시작", Toast.LENGTH_SHORT).show()
                         startNavigationWithWGS84(destName, destLat, destLng)
                     }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "서버 통신 오류(${e.javaClass.simpleName}). 일반 안내 폴백", Toast.LENGTH_LONG).show()
                     startNavigationWithWGS84(destName, destLat, destLng)
                 }
             }
         }
     }
+
+    // 💡 [핵심] optimize 와 replan 에서 공통으로 사용하는 'JSON 파싱 및 내비 시작' 함수입니다.
+    private suspend fun parseAndStartNavi(jsonResponse: JSONObject, currentLat: Double, currentLng: Double, fallbackDestName: String, fallbackLat: Double, fallbackLng: Double) {
+        val optimizedArray = jsonResponse.optJSONArray("route")
+            ?: jsonResponse.optJSONArray("optimized_route")
+            ?: jsonResponse.optJSONArray("waypoints")
+
+        if (optimizedArray != null && optimizedArray.length() > 0) {
+            val viaList = mutableListOf<KNPOI>()
+            var finalDestName = fallbackDestName
+            var finalDestLat = fallbackLat
+            var finalDestLng = fallbackLng
+
+            for (i in 0 until optimizedArray.length()) {
+                val pt = optimizedArray.getJSONObject(i)
+                val type = pt.optString("type", "")
+                val name = pt.optString("name", "경유지 ${i + 1}")
+                val lat = pt.optDouble("lat", 0.0)
+                val lng = pt.optDouble("lon", pt.optDouble("lng", 0.0))
+
+                when (type) {
+                    "waypoint", "rest_stop" -> {
+                        val katec = convertWGS84ToKATEC(lat, lng)
+                        if (katec != null) {
+                            viaList.add(KNPOI(name, katec.first, katec.second, ""))
+                        }
+                    }
+                    "destination" -> {
+                        finalDestName = name
+                        finalDestLat = lat
+                        finalDestLng = lng
+                    }
+                }
+            }
+
+            val startKatec = convertWGS84ToKATEC(currentLat, currentLng)
+            val goalKatec = convertWGS84ToKATEC(finalDestLat, finalDestLng)
+
+            if (startKatec != null && goalKatec != null) {
+                val matchedLocation = KNSDK.sharedGuidance()?.locationGuide?.location
+                val startX = matchedLocation?.pos?.x?.toInt() ?: startKatec.first
+                val startY = matchedLocation?.pos?.y?.toInt() ?: startKatec.second
+
+                val startPoi = KNPOI("현재 위치", startX, startY, "")
+                val goalPoi = KNPOI(finalDestName, goalKatec.first, goalKatec.second, "")
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "새로운 경로 안내를 시작합니다!", Toast.LENGTH_LONG).show()
+                    startNavigationWithWaypoints(startPoi, goalPoi, viaList)
+                }
+            } else {
+                withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
+            }
+        } else {
+            withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
+        }
+    }
+
 
     private fun startNavigationWithWaypoints(start: KNPOI, goal: KNPOI, vias: MutableList<KNPOI>) {
         val guidance = KNSDK.sharedGuidance() ?: return
@@ -416,23 +536,18 @@ class MainActivity : AppCompatActivity(),
     @SuppressLint("MissingPermission")
     private fun startNavigationWithWGS84(name: String, lat: Double, lng: Double) {
         CoroutineScope(Dispatchers.IO).launch {
-            if (lat < 30.0 || lng < 120.0) {
-                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "목적지 좌표 오류. 백엔드 데이터를 확인하세요!", Toast.LENGTH_LONG).show() }
-                return@launch
-            }
+            if (lat < 30.0 || lng < 120.0) return@launch
 
             try {
-                // 🚨 여기도 output_coord=KTM 으로 변경!
                 val url = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                // 🚨 반드시 카카오 개발자 센터의 'REST API 키'를 넣으세요!
+                // 🚨 REST API 키 유지
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000
                 conn.readTimeout = 3000
 
-                val responseCode = conn.responseCode
-                if (responseCode == 200) {
+                if (conn.responseCode == 200) {
                     val res = conn.inputStream.bufferedReader().readText()
                     val docs = JSONObject(res).getJSONArray("documents")
                     if (docs.length() > 0) {
@@ -454,33 +569,19 @@ class MainActivity : AppCompatActivity(),
                                             withContext(Dispatchers.Main) {
                                                 startNavigationWithWaypoints(startPoi, goalPoi, mutableListOf())
                                             }
-                                        } else {
-                                            withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "내 위치 좌표 변환 실패", Toast.LENGTH_LONG).show() }
                                         }
                                     }
-                                } else {
-                                    Toast.makeText(this@MainActivity, "내 위치를 찾을 수 없습니다. GPS를 켜주세요.", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
                     }
-                } else {
-                    val errorStream = conn.errorStream?.bufferedReader()?.readText()
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "목적지 변환 실패 ($responseCode)", Toast.LENGTH_LONG).show()
-                        Log.e("KakaoAPI", "에러 내용: $errorStream")
-                    }
                 }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "인터넷 연결 끊김 (${e.javaClass.simpleName})", Toast.LENGTH_LONG).show()
-                }
-            }
+            } catch (e: Exception) {}
         }
     }
 
     // =========================================================================
-    // 💡 내 정보 수정 및 GPS 전송 주기 유지 (30초)
+    // 기타 세팅 및 GPS 전송
     // =========================================================================
 
     private fun updateMyInfoOnServer(jsonParam: JSONObject, onSuccess: () -> Unit) {
@@ -496,18 +597,10 @@ class MainActivity : AppCompatActivity(),
                 conn.doOutput = true
 
                 OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
-
-                val responseCode = conn.responseCode
-                withContext(Dispatchers.Main) {
-                    if (responseCode == 200 || responseCode == 204) {
-                        onSuccess()
-                    } else {
-                        Toast.makeText(this@MainActivity, "정보 수정 실패", Toast.LENGTH_SHORT).show()
-                    }
+                if (conn.responseCode == 200 || conn.responseCode == 204) {
+                    withContext(Dispatchers.Main) { onSuccess() }
                 }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "서버 연결 오류", Toast.LENGTH_SHORT).show() }
-            }
+            } catch (e: Exception) { }
         }
     }
 
@@ -546,7 +639,7 @@ class MainActivity : AppCompatActivity(),
                     val json = JSONObject().apply { put("phone", newPhone) }
                     updateMyInfoOnServer(json) {
                         binding.tvMyPhone.text = "연락처: $newPhone"
-                        Toast.makeText(this, "휴대폰 번호 변경 완료!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "변경 완료!", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -563,19 +656,16 @@ class MainActivity : AppCompatActivity(),
             hint = "현재 비밀번호"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine()
-            setPadding(20, 30, 20, 30)
         }
         val etNewPwd = EditText(this).apply {
             hint = "새 비밀번호"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine()
-            setPadding(20, 30, 20, 30)
         }
         val etNewPwdConfirm = EditText(this).apply {
             hint = "새 비밀번호 확인"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine()
-            setPadding(20, 30, 20, 30)
         }
         layout.addView(etCurrentPwd)
         layout.addView(etNewPwd)
@@ -600,7 +690,7 @@ class MainActivity : AppCompatActivity(),
                     put("new_password", newPwd)
                 }
                 updateMyInfoOnServer(json) {
-                    Toast.makeText(this, "비밀번호 변경 완료!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "변경 완료!", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("취소", null)
@@ -650,9 +740,7 @@ class MainActivity : AppCompatActivity(),
 
                 OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
                 conn.responseCode
-            } catch (e: Exception) {
-                Log.e("LocationUpdate", "위치 전송 에러: ${e.message}")
-            }
+            } catch (e: Exception) { }
         }
     }
 
@@ -753,18 +841,15 @@ class MainActivity : AppCompatActivity(),
 
     override fun onDestroy() {
         super.onDestroy()
+        webSocket?.cancel() // 💡 소켓 종료
         if (::fusedLocationClient.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
     }
 
-    // =========================================================================
-    // 카카오 내비게이션 초기화 및 델리게이트
-    // =========================================================================
-
     private fun initKakaoNaviSDK() {
         KNSDK.initializeWithAppKey(
-            aAppKey = "b57bc6d46e97f480deecdd3a8e4cd754", // ⚠️ 카카오 네이티브 앱 키 (유지)
+            aAppKey = "b57bc6d46e97f480deecdd3a8e4cd754",
             aClientVersion = "1.0",
             aAppUserId = "test_user",
             aLangType = KNLanguageType.KNLanguageType_KOREAN,
@@ -795,11 +880,7 @@ class MainActivity : AppCompatActivity(),
         val guidance = KNSDK.sharedGuidance()
         guidance?.apply {
             setupDelegates(this)
-            naviView.initWithGuidance(
-                this, null,
-                KNRoutePriority.KNRoutePriority_Recommand,
-                KNRouteAvoidOption.KNRouteAvoidOption_None.value
-            )
+            naviView.initWithGuidance(this, null, KNRoutePriority.KNRoutePriority_Recommand, KNRouteAvoidOption.KNRouteAvoidOption_None.value)
         }
     }
 
