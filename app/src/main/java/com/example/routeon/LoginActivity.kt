@@ -39,7 +39,8 @@ class LoginActivity : AppCompatActivity() {
         val tvGoRegister = findViewById<TextView>(R.id.tv_go_register)
 
         tvGoRegister.setOnClickListener {
-            startActivity(Intent(this, RegisterActivity::class.java))
+            val intent = Intent(this, RegisterActivity::class.java)
+            startActivity(intent)
         }
 
         btnLogin.setOnClickListener {

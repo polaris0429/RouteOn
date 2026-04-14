@@ -1,52 +1,82 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="30dp"
-    android:gravity="center"
-    android:background="#FEE500">
+    android:paddingHorizontal="30dp"
+    android:paddingTop="80dp"
+    android:paddingBottom="30dp"
+    android:gravity="center_horizontal"
+    android:background="#FEE500"
+    tools:ignore="HardcodedText"> <ImageView
+    android:layout_width="240dp"
+    android:layout_height="140dp"
+    android:layout_marginBottom="40dp"
+    android:scaleType="fitCenter"
+    android:src="@drawable/routeon_logo"
+    android:contentDescription="앱 로고" /> <TextView
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="루트온 기사 로그인"
+    android:textSize="24sp"
+    android:textStyle="bold"
+    android:textColor="#000000"
+    android:textAlignment="center"
+    android:layout_marginBottom="40dp"/>
 
-    <ImageView
-        android:layout_width="319dp"
-        android:layout_height="74dp"
-        android:layout_marginBottom="16dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/routeon_logo" />
-
-    <TextView
-        android:layout_width="wrap_content"
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="루트온 기사 로그인"
-        android:textSize="26sp"
-        android:textStyle="bold"
-        android:textColor="#000000"
-        android:layout_marginBottom="30dp"/>
+        android:layout_marginBottom="20dp"
+        android:hint="로그인 아이디"
+        android:textColorHint="#444444"
+        app:hintTextColor="#03C75A"
+        app:boxBackgroundMode="filled"
+        app:boxBackgroundColor="@android:color/transparent"
+        app:boxStrokeColor="#03C75A"
+        app:boxStrokeWidth="1dp"
+        app:boxStrokeWidthFocused="2dp">
 
-    <EditText
-        android:id="@+id/et_username"
-        android:layout_width="match_parent"
-        android:layout_height="55dp"
-        android:hint="아이디 (Username)"
-        android:inputType="text"
-        android:padding="15dp"
-        android:background="@drawable/bg_rounded_input"
-        android:textColorHint="#888888"
-        android:layout_marginBottom="15dp"
-        android:textColor="#000000" />
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_username"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:paddingStart="0dp"
+            android:paddingEnd="0dp"
+            android:paddingBottom="4dp"
+            android:textSize="18sp"
+            android:textColor="#000000"
+            android:background="@android:color/transparent" /> </com.google.android.material.textfield.TextInputLayout>
 
-    <EditText
-        android:id="@+id/et_password"
+    <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
-        android:layout_height="55dp"
-        android:layout_marginBottom="30dp"
-        android:background="@drawable/bg_rounded_input"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="40dp"
         android:hint="비밀번호"
-        android:inputType="textPassword"
-        android:padding="15dp"
-        android:textColor="#000000"
-        android:textColorHint="#888888" />
+        android:textColorHint="#444444"
+        app:hintTextColor="#03C75A"
+        app:passwordToggleEnabled="true"
+        app:passwordToggleTint="#03C75A"
+        app:boxBackgroundMode="filled"
+        app:boxBackgroundColor="@android:color/transparent"
+        app:boxStrokeColor="#03C75A"
+        app:boxStrokeWidth="1dp"
+        app:boxStrokeWidthFocused="2dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_password"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textPassword"
+            android:paddingStart="0dp"
+            android:paddingEnd="0dp"
+            android:paddingBottom="4dp"
+            android:textSize="18sp"
+            android:textColor="#000000"
+            android:background="@android:color/transparent" /> </com.google.android.material.textfield.TextInputLayout>
 
     <Button
         android:id="@+id/btn_login"
@@ -58,18 +88,18 @@
         android:textColor="#FFFFFF"
         android:backgroundTint="#03C75A"
         app:cornerRadius="12dp"
-        android:layout_marginBottom="20dp"/>
+        android:layout_marginBottom="15dp" />
 
     <TextView
         android:id="@+id/tv_go_register"
         android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="계정이 없으신가요? 회원가입하기"
-        android:textSize="15sp"
-        android:textColor="#333333"
-        android:textStyle="bold"
-        android:padding="10dp"
+        android:layout_height="62dp"
         android:clickable="true"
-        android:focusable="true"/>
+        android:focusable="true"
+        android:padding="10dp"
+        android:text="계정이 없으신가요? 회원가입하기"
+        android:textColor="#333333"
+        android:textSize="15sp"
+        android:textStyle="bold" />
 
 </LinearLayout>
