@@ -1,16 +1,24 @@
+// app/build.gradle.kts
+import java.util.Properties
+
+// 1. local.properties 파일 읽기
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+
 plugins {
     alias(libs.plugins.android.application)
 }
 
 android {
     namespace = "com.example.routeon"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-        buildFeatures {
-            viewBinding = true
-        }
+    compileSdk =36
+
+    buildFeatures {
+        viewBinding = true
+        buildConfig = true
     }
 
     defaultConfig {
@@ -24,6 +32,11 @@ android {
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
+
+        buildConfigField("String", "SOLAPI_API_KEY", "\"${localProperties.getProperty("SOLAPI_API_KEY")}\"")
+        buildConfigField("String", "SOLAPI_API_SECRET", "\"${localProperties.getProperty("SOLAPI_API_SECRET")}\"")
+        buildConfigField("String", "KAKAO_REST_API_KEY", "\"${localProperties.getProperty("KAKAO_REST_API_KEY")}\"")
+        buildConfigField("String", "KAKAO_APP_KEY", "\"${localProperties.getProperty("KAKAO_APP_KEY")}\"")
     }
 
     buildTypes {
@@ -37,13 +50,11 @@ android {
     }
 
     packaging {
-        packaging {
-            resources {
-                pickFirsts += "**/*.kotlin_builtins"
-                pickFirsts += "META-INF/*.kotlin_module"
-                pickFirsts += "META-INF/native-image/okhttp/okhttp/native-image.properties"
-                pickFirsts += "META-INF/native-image/**/*.properties"
-            }
+        resources {
+            pickFirsts += "**/*.kotlin_builtins"
+            pickFirsts += "META-INF/*.kotlin_module"
+            pickFirsts += "META-INF/native-image/okhttp/okhttp/native-image.properties"
+            pickFirsts += "META-INF/native-image/**/*.properties"
         }
     }
 }

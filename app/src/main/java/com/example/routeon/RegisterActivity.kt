@@ -36,6 +36,7 @@ import java.util.TimeZone
 import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import com.example.routeon.BuildConfig
 
 class RegisterActivity : AppCompatActivity() {
 
@@ -261,8 +262,8 @@ class RegisterActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val apiKey = "NCSFMQX5K5MVZFQC"
-                    val apiSecret = "2CCDQTCRLXCGX8TTGUWDIGYUMJTQZSRE"
+                    val apiKey = BuildConfig.SOLAPI_API_KEY
+                    val apiSecret = BuildConfig.SOLAPI_API_SECRET
 
                     val salt = UUID.randomUUID().toString().replace("-", "")
                     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
