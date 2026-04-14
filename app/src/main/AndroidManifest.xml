@@ -38,5 +38,10 @@
             android:name=".MainActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".PendingActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
     </application>
 </manifest>

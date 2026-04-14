@@ -261,8 +261,8 @@ class RegisterActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val apiKey = "NCS5JONCEGRELVCQ"
-                    val apiSecret = "YLPZWOHL2V3ZXI4YBJGCAF3DUB9GNSGK"
+                    val apiKey = "NCSFMQX5K5MVZFQC"
+                    val apiSecret = "2CCDQTCRLXCGX8TTGUWDIGYUMJTQZSRE"
 
                     val salt = UUID.randomUUID().toString().replace("-", "")
                     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")

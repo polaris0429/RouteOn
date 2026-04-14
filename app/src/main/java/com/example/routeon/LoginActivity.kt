@@ -25,6 +25,7 @@ class LoginActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+
         if (sharedPref.getBoolean("isLoggedIn", false)) {
             startActivity(Intent(this, MainActivity::class.java))
             finish()
@@ -44,10 +45,10 @@ class LoginActivity : AppCompatActivity() {
         }
 
         btnLogin.setOnClickListener {
-            val username = etUsername.text.toString().trim()
-            val password = etPassword.text.toString().trim()
+            val usernameStr = etUsername.text.toString().trim()
+            val passwordStr = etPassword.text.toString().trim()
 
-            if (username.isEmpty() || password.isEmpty()) {
+            if (usernameStr.isEmpty() || passwordStr.isEmpty()) {
                 Toast.makeText(this, "아이디와 비밀번호를 입력해주세요.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
@@ -56,67 +57,79 @@ class LoginActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    // 1. 로그인 요청
-                    val url = URL("http://swc.ddns.net:8000/auth/login")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    conn.connectTimeout = 5000
-                    conn.readTimeout = 5000
-                    conn.doOutput = true
+                    // ====================================================
+                    // 💡 수정된 부분: 폼 데이터가 아닌 JSON 형식으로 전송합니다.
+                    // ====================================================
+                    val loginUrl = URL("http://swc.ddns.net:8000/auth/login")
+                    val loginConn = loginUrl.openConnection() as HttpURLConnection
+                    loginConn.requestMethod = "POST"
+                    loginConn.setRequestProperty("Content-Type", "application/json") // JSON 지정
+                    loginConn.doOutput = true
 
-                    val jsonParam = JSONObject().apply {
-                        put("username", username)
-                        put("password", password)
+                    // JSON 객체 생성
+                    val loginJson = JSONObject().apply {
+                        put("username", usernameStr)
+                        put("password", passwordStr)
                     }
-                    OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
+                    OutputStreamWriter(loginConn.outputStream).use { it.write(loginJson.toString()) }
+                    // ====================================================
 
-                    if (conn.responseCode == 200) {
-                        val responseData = conn.inputStream.bufferedReader().use { it.readText() }
-                        val token = JSONObject(responseData).optString("access_token", "")
+                    if (loginConn.responseCode == 200) {
+                        val response = loginConn.inputStream.bufferedReader().use { it.readText() }
+                        val accessToken = JSONObject(response).getString("access_token")
 
-                        // 💡 2. 발급받은 토큰으로 내 정보(/auth/me)를 조회하여 고유 user_id(UUID)를 가져옵니다.
+                        // 2. 내 정보 조회 API 호출
                         val meUrl = URL("http://swc.ddns.net:8000/auth/me")
                         val meConn = meUrl.openConnection() as HttpURLConnection
                         meConn.requestMethod = "GET"
-                        meConn.setRequestProperty("Authorization", "Bearer $token")
+                        meConn.setRequestProperty("Authorization", "Bearer $accessToken")
 
                         if (meConn.responseCode == 200) {
-                            val meData = meConn.inputStream.bufferedReader().use { it.readText() }
-                            val userId = JSONObject(meData).optString("id", "")
+                            val userResponse = meConn.inputStream.bufferedReader().use { it.readText() }
+                            val userJson = JSONObject(userResponse)
 
-                            // 토큰과 user_id를 함께 저장! (위치 전송에 사용됨)
-                            sharedPref.edit().apply {
-                                putBoolean("isLoggedIn", true)
-                                putString("username", username)
-                                putString("access_token", token)
-                                putString("user_id", userId)
-                                apply()
-                            }
+                            val role = userJson.optString("role")
+                            val userId = userJson.optString("id")
+                            val userName = userJson.optString("username")
 
                             withContext(Dispatchers.Main) {
                                 btnLogin.isEnabled = true
-                                Toast.makeText(this@LoginActivity, "로그인 성공!", Toast.LENGTH_SHORT).show()
-                                startActivity(Intent(this@LoginActivity, MainActivity::class.java))
-                                finish()
+
+                                if (role == "pending") {
+                                    val intent = Intent(this@LoginActivity, PendingActivity::class.java)
+                                    startActivity(intent)
+                                } else {
+                                    sharedPref.edit().apply {
+                                        putString("access_token", accessToken)
+                                        putBoolean("isLoggedIn", true)
+                                        putString("username", userName)
+                                        putString("role", role)
+                                        putString("user_id", userId)
+                                        apply()
+                                    }
+
+                                    Toast.makeText(this@LoginActivity, "로그인 성공!", Toast.LENGTH_SHORT).show()
+                                    startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+                                    finish()
+                                }
                             }
                         } else {
                             withContext(Dispatchers.Main) {
                                 btnLogin.isEnabled = true
-                                Toast.makeText(this@LoginActivity, "유저 정보를 불러올 수 없습니다.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@LoginActivity, "사용자 정보를 가져올 수 없습니다.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     } else {
                         withContext(Dispatchers.Main) {
                             btnLogin.isEnabled = true
-                            Toast.makeText(this@LoginActivity, "아이디 또는 비밀번호가 틀렸습니다.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@LoginActivity, "아이디 또는 비밀번호가 올바르지 않습니다.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                     withContext(Dispatchers.Main) {
                         btnLogin.isEnabled = true
-                        Toast.makeText(this@LoginActivity, "서버 연결 실패", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@LoginActivity, "서버 연결에 실패했습니다.", Toast.LENGTH_LONG).show()
                     }
                 }
             }
