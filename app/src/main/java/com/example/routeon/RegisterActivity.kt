@@ -42,7 +42,6 @@ class RegisterActivity : AppCompatActivity() {
     private var generatedCode = ""
     private lateinit var otpBoxes: Array<EditText>
 
-    // 저장할 데이터들
     private var orgCode = ""
     private var companyName = ""
     private var username = ""
@@ -119,7 +118,7 @@ class RegisterActivity : AppCompatActivity() {
         }
 
         // ==========================================
-        // 🚀 STEP 1 -> STEP 2 (조직코드 확인)
+        // 🚀 STEP 1 -> STEP 2 (조직코드 실제 API 연동)
         // ==========================================
         btnNextStep1.setOnClickListener {
             orgCode = etOrgCode.text.toString().trim()
@@ -128,17 +127,46 @@ class RegisterActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // 💡 [안내] 백엔드 명세서 상 조직코드로 기업명을 조회하는 단독 API가 명시되어 있지 않아,
-            // 일단 화면 전환이 되도록 회사명을 임의 지정했습니다. 백엔드 팀원에게 "조직코드 조회 API"를 요청해주세요!
-            companyName = "등록된 물류회사"
+            btnNextStep1.isEnabled = false
+            Toast.makeText(this, "조직코드를 확인 중입니다...", Toast.LENGTH_SHORT).show()
 
-            tvCompanyName.text = "$companyName 기사님 환영합니다!"
-            layoutStep1.visibility = View.GONE
-            layoutStep2.visibility = View.VISIBLE
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    // 💡 신규 추가된 기업명 조회 API 호출
+                    val url = URL("http://swc.ddns.net:8000/organizations/lookup?org_code=$orgCode")
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.connectTimeout = 5000
+
+                    val responseCode = conn.responseCode
+                    if (responseCode == 200) {
+                        val responseData = conn.inputStream.bufferedReader().use { it.readText() }
+                        val jsonResponse = JSONObject(responseData)
+                        companyName = jsonResponse.optString("name", "조직")
+
+                        withContext(Dispatchers.Main) {
+                            btnNextStep1.isEnabled = true
+                            tvCompanyName.text = "$companyName \n기사님 환영합니다!"
+                            layoutStep1.visibility = View.GONE
+                            layoutStep2.visibility = View.VISIBLE
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            btnNextStep1.isEnabled = true
+                            Toast.makeText(this@RegisterActivity, "유효하지 않거나 존재하지 않는 조직코드입니다.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        btnNextStep1.isEnabled = true
+                        Toast.makeText(this@RegisterActivity, "서버 연결에 실패했습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
 
         // ==========================================
-        // 🚀 STEP 2 -> STEP 3 (아이디/비밀번호 확인)
+        // 🚀 아이디 중복확인 (실제 API 연동)
         // ==========================================
         btnCheckUsername.setOnClickListener {
             val inputId = etUsername.text.toString().trim()
@@ -147,13 +175,54 @@ class RegisterActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // 💡 [안내] 명세서에 아이디 중복확인 API가 없어 통과되도록 임시 처리했습니다.
-            isUsernameChecked = true
-            Toast.makeText(this, "사용 가능한 아이디입니다.", Toast.LENGTH_SHORT).show()
-            btnCheckUsername.text = "확인완료"
             btnCheckUsername.isEnabled = false
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    // 💡 신규 추가된 아이디 중복 확인 API 호출
+                    val url = URL("http://swc.ddns.net:8000/auth/check-username?username=$inputId")
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.connectTimeout = 5000
+
+                    val responseCode = conn.responseCode
+                    withContext(Dispatchers.Main) {
+                        if (responseCode == 200) {
+                            isUsernameChecked = true
+                            Toast.makeText(this@RegisterActivity, "사용 가능한 아이디입니다.", Toast.LENGTH_SHORT).show()
+                            btnCheckUsername.text = "확인완료"
+                            btnCheckUsername.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#03C75A"))
+                        } else {
+                            btnCheckUsername.isEnabled = true
+                            Toast.makeText(this@RegisterActivity, "이미 사용 중인 아이디입니다.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        btnCheckUsername.isEnabled = true
+                        Toast.makeText(this@RegisterActivity, "중복확인 중 서버 에러가 발생했습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
 
+        // 💡 아이디를 다시 수정하면 중복확인을 다시 받도록 상태 초기화
+        etUsername.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (isUsernameChecked) {
+                    isUsernameChecked = false
+                    btnCheckUsername.isEnabled = true
+                    btnCheckUsername.text = "중복확인"
+                    btnCheckUsername.backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#333333"))
+                }
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        // ==========================================
+        // 🚀 STEP 2 -> STEP 3
+        // ==========================================
         btnNextStep2.setOnClickListener {
             val name = etName.text.toString().trim()
             username = etUsername.text.toString().trim()
@@ -178,7 +247,7 @@ class RegisterActivity : AppCompatActivity() {
         }
 
         // ==========================================
-        // 🚀 STEP 3: SMS 인증 후 최종 가입 (API 전송)
+        // 🚀 STEP 3: SMS 인증 후 최종 가입
         // ==========================================
         btnSendSms.setOnClickListener {
             val phone = etPhone.text.toString().trim().replace("-", "")
@@ -248,7 +317,6 @@ class RegisterActivity : AppCompatActivity() {
             val phone = etPhone.text.toString().trim()
 
             if (inputCode == generatedCode && inputCode.length == 6) {
-                // 💡 인증 성공 즉시 백엔드로 회원가입 데이터 전송!
                 btnVerifySms.isEnabled = false
                 registerUserOnServer(username, password, phone, orgCode)
             } else {
@@ -260,7 +328,7 @@ class RegisterActivity : AppCompatActivity() {
         // 🚀 STEP 4: 가입 완료 화면 -> 로그인 이동
         // ==========================================
         btnGoToLogin.setOnClickListener {
-            finish() // 현재 회원가입 창을 닫고 로그인 창으로 돌아갑니다.
+            finish()
         }
     }
 
@@ -273,7 +341,6 @@ class RegisterActivity : AppCompatActivity() {
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.doOutput = true
 
-                // 백엔드 명세서에 맞춘 JSON 바디 (role: driver)
                 val jsonParam = JSONObject().apply {
                     put("username", usernameStr)
                     put("password", passwordStr)
@@ -287,7 +354,6 @@ class RegisterActivity : AppCompatActivity() {
                 val responseCode = conn.responseCode
                 withContext(Dispatchers.Main) {
                     if (responseCode == 201 || responseCode == 200) {
-                        // 💡 가입 성공 시 STEP 4 화면 띄우기
                         findViewById<LinearLayout>(R.id.layout_step3).visibility = View.GONE
                         findViewById<LinearLayout>(R.id.layout_step4).visibility = View.VISIBLE
                     } else {
