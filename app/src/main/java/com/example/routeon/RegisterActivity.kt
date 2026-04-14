@@ -40,8 +40,14 @@ import javax.crypto.spec.SecretKeySpec
 class RegisterActivity : AppCompatActivity() {
 
     private var generatedCode = ""
-    private var isPhoneVerified = false
     private lateinit var otpBoxes: Array<EditText>
+
+    // 저장할 데이터들
+    private var orgCode = ""
+    private var companyName = ""
+    private var username = ""
+    private var password = ""
+    private var isUsernameChecked = false
 
     private val silentSmsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -51,7 +57,6 @@ class RegisterActivity : AppCompatActivity() {
                     val messageBody = sms.messageBody
                     if (messageBody.contains("[RouteOn]")) {
                         val code = Regex("\\d{6}").find(messageBody)?.value
-
                         if (code != null) {
                             for (i in 0 until 6) {
                                 otpBoxes[i].setText(code[i].toString())
@@ -70,22 +75,35 @@ class RegisterActivity : AppCompatActivity() {
         setContentView(R.layout.activity_register)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(
-                Manifest.permission.RECEIVE_SMS,
-                Manifest.permission.READ_SMS
-            ), 101)
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
         }
 
-        val etOrgCode = findViewById<EditText>(R.id.et_org_code)
-        val etUsername = findViewById<EditText>(R.id.et_username)
-        val etPassword = findViewById<EditText>(R.id.et_password)
-        val etPhone = findViewById<EditText>(R.id.et_phone)
-        val btnRegister = findViewById<Button>(R.id.btn_register)
+        val layoutStep1 = findViewById<LinearLayout>(R.id.layout_step1)
+        val layoutStep2 = findViewById<LinearLayout>(R.id.layout_step2)
+        val layoutStep3 = findViewById<LinearLayout>(R.id.layout_step3)
+        val layoutStep4 = findViewById<LinearLayout>(R.id.layout_step4)
 
+        // Step 1
+        val etOrgCode = findViewById<EditText>(R.id.et_org_code)
+        val btnNextStep1 = findViewById<Button>(R.id.btn_next_step1)
+
+        // Step 2
+        val tvCompanyName = findViewById<TextView>(R.id.tv_company_name)
+        val etName = findViewById<EditText>(R.id.et_name)
+        val etUsername = findViewById<EditText>(R.id.et_username)
+        val btnCheckUsername = findViewById<Button>(R.id.btn_check_username)
+        val etPassword = findViewById<EditText>(R.id.et_password)
+        val etPasswordConfirm = findViewById<EditText>(R.id.et_password_confirm)
+        val btnNextStep2 = findViewById<Button>(R.id.btn_next_step2)
+
+        // Step 3
+        val etPhone = findViewById<EditText>(R.id.et_phone)
         val btnSendSms = findViewById<Button>(R.id.btn_send_sms)
         val layoutVerification = findViewById<LinearLayout>(R.id.layout_verification)
         val btnVerifySms = findViewById<Button>(R.id.btn_verify_sms)
-        val tvVerifySuccess = findViewById<TextView>(R.id.tv_verify_success)
+
+        // Step 4
+        val btnGoToLogin = findViewById<Button>(R.id.btn_go_to_login)
 
         otpBoxes = arrayOf(
             findViewById(R.id.otp1), findViewById(R.id.otp2), findViewById(R.id.otp3),
@@ -101,7 +119,66 @@ class RegisterActivity : AppCompatActivity() {
         }
 
         // ==========================================
-        // 1. 인증번호 발송
+        // 🚀 STEP 1 -> STEP 2 (조직코드 확인)
+        // ==========================================
+        btnNextStep1.setOnClickListener {
+            orgCode = etOrgCode.text.toString().trim()
+            if (orgCode.isEmpty()) {
+                Toast.makeText(this, "조직코드를 입력해주세요.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // 💡 [안내] 백엔드 명세서 상 조직코드로 기업명을 조회하는 단독 API가 명시되어 있지 않아,
+            // 일단 화면 전환이 되도록 회사명을 임의 지정했습니다. 백엔드 팀원에게 "조직코드 조회 API"를 요청해주세요!
+            companyName = "등록된 물류회사"
+
+            tvCompanyName.text = "$companyName 기사님 환영합니다!"
+            layoutStep1.visibility = View.GONE
+            layoutStep2.visibility = View.VISIBLE
+        }
+
+        // ==========================================
+        // 🚀 STEP 2 -> STEP 3 (아이디/비밀번호 확인)
+        // ==========================================
+        btnCheckUsername.setOnClickListener {
+            val inputId = etUsername.text.toString().trim()
+            if (inputId.isEmpty()) {
+                Toast.makeText(this, "아이디를 입력해주세요.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // 💡 [안내] 명세서에 아이디 중복확인 API가 없어 통과되도록 임시 처리했습니다.
+            isUsernameChecked = true
+            Toast.makeText(this, "사용 가능한 아이디입니다.", Toast.LENGTH_SHORT).show()
+            btnCheckUsername.text = "확인완료"
+            btnCheckUsername.isEnabled = false
+        }
+
+        btnNextStep2.setOnClickListener {
+            val name = etName.text.toString().trim()
+            username = etUsername.text.toString().trim()
+            password = etPassword.text.toString().trim()
+            val passwordConfirm = etPasswordConfirm.text.toString().trim()
+
+            if (name.isEmpty() || username.isEmpty() || password.isEmpty()) {
+                Toast.makeText(this, "모든 정보를 입력해주세요.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (!isUsernameChecked) {
+                Toast.makeText(this, "아이디 중복확인을 진행해주세요.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (password != passwordConfirm) {
+                Toast.makeText(this, "비밀번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            layoutStep2.visibility = View.GONE
+            layoutStep3.visibility = View.VISIBLE
+        }
+
+        // ==========================================
+        // 🚀 STEP 3: SMS 인증 후 최종 가입 (API 전송)
         // ==========================================
         btnSendSms.setOnClickListener {
             val phone = etPhone.text.toString().trim().replace("-", "")
@@ -125,9 +202,7 @@ class RegisterActivity : AppCompatActivity() {
 
                     val mac = Mac.getInstance("HmacSHA256")
                     mac.init(SecretKeySpec(apiSecret.toByteArray(), "HmacSHA256"))
-                    val signature = mac.doFinal((date + salt).toByteArray()).joinToString("") {
-                        String.format("%02x", (it.toInt() and 0xFF))
-                    }
+                    val signature = mac.doFinal((date + salt).toByteArray()).joinToString("") { String.format("%02x", (it.toInt() and 0xFF)) }
                     val authHeader = "HMAC-SHA256 apiKey=$apiKey, date=$date, salt=$salt, signature=$signature"
 
                     val url = URL("https://api.solapi.com/messages/v4/send")
@@ -168,82 +243,62 @@ class RegisterActivity : AppCompatActivity() {
             }
         }
 
-        // ==========================================
-        // 2. 인증번호 직접 확인 및 UI 변경
-        // ==========================================
         btnVerifySms.setOnClickListener {
             val inputCode = otpBoxes.joinToString("") { it.text.toString() }
+            val phone = etPhone.text.toString().trim()
 
             if (inputCode == generatedCode && inputCode.length == 6) {
-                isPhoneVerified = true
-                Toast.makeText(this, "인증이 완료되었습니다.", Toast.LENGTH_SHORT).show()
-
-                etPhone.isEnabled = false
-                otpBoxes.forEach { it.isEnabled = false }
-                btnSendSms.isEnabled = false
-
-                // 💡 [핵심] 인증 성공 시 버튼 숨기고 텍스트 표시!
-                btnVerifySms.visibility = View.GONE
-                tvVerifySuccess.visibility = View.VISIBLE
+                // 💡 인증 성공 즉시 백엔드로 회원가입 데이터 전송!
+                btnVerifySms.isEnabled = false
+                registerUserOnServer(username, password, phone, orgCode)
             } else {
                 Toast.makeText(this, "인증번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
             }
         }
 
         // ==========================================
-        // 3. 회원가입 서버 전송
+        // 🚀 STEP 4: 가입 완료 화면 -> 로그인 이동
         // ==========================================
-        btnRegister.setOnClickListener {
-            if (!isPhoneVerified) {
-                Toast.makeText(this, "휴대폰 인증을 먼저 완료해주세요.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+        btnGoToLogin.setOnClickListener {
+            finish() // 현재 회원가입 창을 닫고 로그인 창으로 돌아갑니다.
+        }
+    }
 
-            val orgCode = etOrgCode.text.toString().trim()
-            val username = etUsername.text.toString().trim()
-            val password = etPassword.text.toString().trim()
-            val phone = etPhone.text.toString().trim()
+    private fun registerUserOnServer(usernameStr: String, passwordStr: String, phoneStr: String, orgCodeStr: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("http://swc.ddns.net:8000/auth/register")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
 
-            if (orgCode.isEmpty() || username.isEmpty() || password.isEmpty() || phone.isEmpty()) {
-                Toast.makeText(this, "모든 정보를 입력해주세요.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+                // 백엔드 명세서에 맞춘 JSON 바디 (role: driver)
+                val jsonParam = JSONObject().apply {
+                    put("username", usernameStr)
+                    put("password", passwordStr)
+                    put("phone", phoneStr)
+                    put("org_code", orgCodeStr)
+                    put("role", "driver")
+                }
 
-            btnRegister.isEnabled = false
+                OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
 
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val url = URL("http://swc.ddns.net:8000/auth/register")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "POST"
-                    conn.setRequestProperty("Content-Type", "application/json")
-                    conn.doOutput = true
-
-                    val jsonParam = JSONObject().apply {
-                        put("username", username)
-                        put("password", password)
-                        put("phone", phone)
-                        put("org_code", orgCode)
-                        put("role", "driver")
+                val responseCode = conn.responseCode
+                withContext(Dispatchers.Main) {
+                    if (responseCode == 201 || responseCode == 200) {
+                        // 💡 가입 성공 시 STEP 4 화면 띄우기
+                        findViewById<LinearLayout>(R.id.layout_step3).visibility = View.GONE
+                        findViewById<LinearLayout>(R.id.layout_step4).visibility = View.VISIBLE
+                    } else {
+                        findViewById<Button>(R.id.btn_verify_sms).isEnabled = true
+                        Toast.makeText(this@RegisterActivity, "가입 실패. (조직코드를 다시 확인해주세요)", Toast.LENGTH_LONG).show()
                     }
-
-                    OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
-
-                    val responseCode = conn.responseCode
-                    withContext(Dispatchers.Main) {
-                        btnRegister.isEnabled = true
-                        if (responseCode == 201 || responseCode == 200) {
-                            Toast.makeText(this@RegisterActivity, "가입 완료! 로그인 해주세요.", Toast.LENGTH_SHORT).show()
-                            finish()
-                        } else {
-                            Toast.makeText(this@RegisterActivity, "가입 실패", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                } catch (_: Exception) {
-                    withContext(Dispatchers.Main) {
-                        btnRegister.isEnabled = true
-                        Toast.makeText(this@RegisterActivity, "서버 연결 실패", Toast.LENGTH_SHORT).show()
-                    }
+                }
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) {
+                    findViewById<Button>(R.id.btn_verify_sms).isEnabled = true
+                    Toast.makeText(this@RegisterActivity, "서버 연결 실패", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -254,13 +309,10 @@ class RegisterActivity : AppCompatActivity() {
             otpBoxes[i].addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    if (s?.length == 1 && i < 5) {
-                        otpBoxes[i + 1].requestFocus()
-                    }
+                    if (s?.length == 1 && i < 5) otpBoxes[i + 1].requestFocus()
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
-
             otpBoxes[i].setOnKeyListener { _, keyCode, event ->
                 if (keyCode == KeyEvent.KEYCODE_DEL && event.action == KeyEvent.ACTION_DOWN) {
                     if (otpBoxes[i].text.isEmpty() && i > 0) {
@@ -276,8 +328,6 @@ class RegisterActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            unregisterReceiver(silentSmsReceiver)
-        } catch (_: Exception) {}
+        try { unregisterReceiver(silentSmsReceiver) } catch (_: Exception) {}
     }
 }
