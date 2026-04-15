@@ -143,7 +143,7 @@ class RegisterActivity : AppCompatActivity() {
                     if (responseCode == 200) {
                         val responseData = conn.inputStream.bufferedReader().use { it.readText() }
                         val jsonResponse = JSONObject(responseData)
-                        companyName = jsonResponse.optString("name", "조직")
+                        companyName = jsonResponse.optString("org_name", "조직")
 
                         withContext(Dispatchers.Main) {
                             btnNextStep1.isEnabled = true
