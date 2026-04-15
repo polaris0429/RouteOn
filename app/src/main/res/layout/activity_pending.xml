@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:gravity="center"
     android:padding="40dp"
-    android:background="#FEE500">
+    android:background="#FFFFFF">
 
     <ImageView
         android:layout_width="240dp"
@@ -42,8 +42,8 @@
         android:text="로그인 화면으로 돌아가기"
         android:textSize="18sp"
         android:textStyle="bold"
-        android:textColor="#FFFFFF"
-        android:backgroundTint="#03C75A"
+        android:textColor="#333333"
+        android:backgroundTint="#FEE500"
         app:cornerRadius="12dp" />
 
 </LinearLayout>

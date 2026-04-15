@@ -9,7 +9,7 @@
     android:paddingTop="50dp"
     android:paddingBottom="30dp"
     android:gravity="center_horizontal"
-    android:background="#FEE500"
+    android:background="#FFFFFF"
     tools:ignore="HardcodedText">
 
     <ImageView
@@ -70,8 +70,8 @@
             android:text="다음"
             android:textSize="18sp"
             android:textStyle="bold"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#03C75A"
+            android:textColor="#333333"
+            android:backgroundTint="#FEE500"
             app:cornerRadius="12dp" />
     </LinearLayout>
 
@@ -232,8 +232,8 @@
             android:text="다음"
             android:textSize="18sp"
             android:textStyle="bold"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#03C75A"
+            android:textColor="#333333"
+            android:backgroundTint="#FEE500"
             app:cornerRadius="12dp" />
     </LinearLayout>
 
