@@ -147,7 +147,7 @@ class RegisterActivity : AppCompatActivity() {
 
                         withContext(Dispatchers.Main) {
                             btnNextStep1.isEnabled = true
-                            tvCompanyName.text = "$companyName \n기사님 환영합니다!"
+                            tvCompanyName.text = companyName
                             layoutStep1.visibility = View.GONE
                             layoutStep2.visibility = View.VISIBLE
                         }
