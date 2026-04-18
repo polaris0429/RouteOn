@@ -57,22 +57,17 @@ class LoginActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    // ====================================================
-                    // 💡 수정된 부분: 폼 데이터가 아닌 JSON 형식으로 전송합니다.
-                    // ====================================================
                     val loginUrl = URL("http://swc.ddns.net:8000/auth/login")
                     val loginConn = loginUrl.openConnection() as HttpURLConnection
                     loginConn.requestMethod = "POST"
-                    loginConn.setRequestProperty("Content-Type", "application/json") // JSON 지정
+                    loginConn.setRequestProperty("Content-Type", "application/json")
                     loginConn.doOutput = true
 
-                    // JSON 객체 생성
                     val loginJson = JSONObject().apply {
                         put("username", usernameStr)
                         put("password", passwordStr)
                     }
                     OutputStreamWriter(loginConn.outputStream).use { it.write(loginJson.toString()) }
-                    // ====================================================
 
                     if (loginConn.responseCode == 200) {
                         val response = loginConn.inputStream.bufferedReader().use { it.readText() }
@@ -114,9 +109,15 @@ class LoginActivity : AppCompatActivity() {
                                 }
                             }
                         } else {
+                            // 💡 1. 백엔드에서 비활성/대기 유저의 접근을 400/401/403으로 막은 경우를 잡아냅니다.
                             withContext(Dispatchers.Main) {
                                 btnLogin.isEnabled = true
-                                Toast.makeText(this@LoginActivity, "사용자 정보를 가져올 수 없습니다.", Toast.LENGTH_SHORT).show()
+                                if (meConn.responseCode == 400 || meConn.responseCode == 401 || meConn.responseCode == 403) {
+                                    val intent = Intent(this@LoginActivity, PendingActivity::class.java)
+                                    startActivity(intent)
+                                } else {
+                                    Toast.makeText(this@LoginActivity, "사용자 정보를 가져올 수 없습니다.", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     } else {
