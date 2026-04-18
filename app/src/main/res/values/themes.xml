@@ -1,10 +1,16 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.RouteOn" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#FFE812</item> <item name="colorOnPrimary">#000000</item>
-        <item name="android:windowBackground">#FFFFFF</item>
+        <!-- 주요 색상: 초록 계열로 변경 -->
+        <item name="colorPrimary">#2E7D32</item>
+        <item name="colorPrimaryVariant">#1B5E20</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#4CAF50</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <!-- 다크모드 대응: windowBackground는 night 리소스에서 덮어씀 -->
+        <item name="android:windowBackground">@android:color/white</item>
         <item name="android:textColorPrimary">#000000</item>
-
     </style>
+
     <style name="ToolbarTitleStyle" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">
         <item name="android:textSize">17sp</item>
         <item name="android:textColor">#1A1A1A</item>

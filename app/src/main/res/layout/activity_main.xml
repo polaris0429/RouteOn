@@ -11,7 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 
-    <!-- 배송/운행 완료 버튼 (근처 도착 시 표시) -->
+    <!-- 배송/운행 완료 버튼 -->
     <Button
         android:id="@+id/btnCompleteTrip"
         android:layout_width="wrap_content"
@@ -24,18 +24,6 @@
         android:paddingEnd="24dp"
         android:textColor="#FFFFFF"
         app:backgroundTint="#2E7D32"/>
-
-    <!-- 설정 FAB (우상단) -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/btnSettings"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_margin="16dp"
-        android:src="@android:drawable/ic_menu_preferences"
-        android:contentDescription="설정"
-        app:backgroundTint="#FFEB00"
-        app:tint="#333333"/>
 
     <!-- 바텀 시트 (운행 목록) -->
     <LinearLayout
@@ -57,7 +45,6 @@
             android:layout_marginBottom="6dp"
             android:background="#CCCCCC"/>
 
-        <!-- 헤더 타이틀 -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -69,7 +56,6 @@
             android:paddingEnd="20dp"
             android:paddingBottom="8dp"/>
 
-        <!-- 목록 스크롤 영역 -->
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="match_parent">
@@ -81,10 +67,24 @@
                 android:orientation="vertical"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
-                android:paddingBottom="24dp"/>
+                android:paddingBottom="100dp"/>
+            <!-- paddingBottom=100dp: FAB 뒤에 목록이 가리지 않도록 -->
 
         </ScrollView>
 
     </LinearLayout>
+
+    <!-- 설정 FAB: 바텀시트가 완전히 펼쳐졌을 때만 보임 (오른쪽 하단) -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btnSettings"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="20dp"
+        android:src="@android:drawable/ic_menu_preferences"
+        android:contentDescription="설정"
+        android:visibility="gone"
+        app:backgroundTint="#2E7D32"
+        app:tint="#FFFFFF"/>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

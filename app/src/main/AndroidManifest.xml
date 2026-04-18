@@ -5,10 +5,11 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <uses-permission android:name="android.permission.RECEIVE_SMS" tools:ignore="ProtectedPermissions" />
-    <uses-permission android:name="android.permission.READ_SMS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.RECEIVE_SMS" tools:ignore="ProtectedPermissions"/>
+    <uses-permission android:name="android.permission.READ_SMS"    tools:ignore="ProtectedPermissions"/>
 
-    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false"/>
 
     <application
         android:allowBackup="true"
@@ -20,31 +21,24 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.RouteOn"
         android:usesCleartextTraffic="true"
+        android:localeConfig="@xml/locales_config"
         tools:targetApi="31">
 
-        <activity
-            android:name=".LoginActivity"
-            android:exported="true">
+        <activity android:name=".LoginActivity" android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
 
-        <activity android:name=".RegisterActivity" android:exported="false" />
-
-        <activity android:name=".MainActivity" android:exported="false" />
-
-        <activity
-            android:name=".PendingActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity android:name=".SettingsActivity" android:exported="false" />
-        <activity android:name=".NotificationSettingsActivity" android:exported="false" />
-        <activity android:name=".ThemeVibrationSettingsActivity" android:exported="false" />
-        <activity android:name=".VehicleSettingsActivity" android:exported="false" />
-        <activity android:name=".LanguageSettingsActivity" android:exported="false" />
+        <activity android:name=".RegisterActivity"  android:exported="false"/>
+        <activity android:name=".MainActivity"      android:exported="false"/>
+        <activity android:name=".PendingActivity"   android:exported="false" android:screenOrientation="portrait"/>
+        <activity android:name=".SettingsActivity"              android:exported="false"/>
+        <activity android:name=".NotificationSettingsActivity"  android:exported="false"/>
+        <activity android:name=".ThemeVibrationSettingsActivity" android:exported="false"/>
+        <activity android:name=".VehicleSettingsActivity"       android:exported="false"/>
+        <activity android:name=".LanguageSettingsActivity"      android:exported="false"/>
 
     </application>
 </manifest>

@@ -1,7 +1,11 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
+    <!-- 야간 모드: 배경 어둡게 -->
     <style name="Theme.RouteOn" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#FFE812</item>
-        <item name="colorOnPrimary">#000000</item>
+        <item name="colorPrimary">#2E7D32</item>
+        <item name="colorPrimaryVariant">#1B5E20</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#4CAF50</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
         <item name="android:windowBackground">#121212</item>
         <item name="android:textColorPrimary">#FFFFFF</item>
     </style>
