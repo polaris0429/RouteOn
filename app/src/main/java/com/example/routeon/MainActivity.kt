@@ -10,7 +10,6 @@ import android.os.Bundle
 import android.os.Looper
 import android.text.InputType
 import android.util.Log
-import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -33,6 +32,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.kakaomobility.knsdk.KNSDK
 import com.kakaomobility.knsdk.common.objects.KNError
 import com.kakaomobility.knsdk.common.objects.KNPOI
@@ -121,16 +121,33 @@ class MainActivity : AppCompatActivity(),
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        setupBottomNavigation()
+        // 바텀 시트(운행 목록) 화면 위로 95% 확장 설정
+        val bottomSheetBehavior = BottomSheetBehavior.from(binding.bottomSheet)
+        val displayMetrics = resources.displayMetrics
+        bottomSheetBehavior.expandedOffset = (displayMetrics.heightPixels * 0.05).toInt()
+        bottomSheetBehavior.isFitToContents = false
 
-        // 💡 1. 앱 실행 시 첫 화면을 내비게이션(지도)으로 강제 전환
-        binding.bottomNav.selectedItemId = R.id.nav_map
+        // 설정 아이콘 클릭 시 설정 뷰(전체 화면) 표시
+        binding.btnSettings.setOnClickListener {
+            binding.settingsView.visibility = View.VISIBLE
+        }
+
+        // 설정 뷰 닫기 아이콘 클릭 시 숨김
+        binding.btnCloseSettings.setOnClickListener {
+            binding.settingsView.visibility = View.GONE
+        }
 
         setupSettingsUI()
         setupRunListUI()
         checkLocationPermission()
 
         connectWebSocket()
+    }
+
+    // 앱으로 다시 돌아올 때마다 운행 목록 자동 새로고침
+    override fun onResume() {
+        super.onResume()
+        fetchTrips()
     }
 
     // =========================================================================
@@ -353,11 +370,7 @@ class MainActivity : AppCompatActivity(),
     // 운행 목록 갱신
     // =========================================================================
     private fun setupRunListUI() {
-        val btnRefresh = findViewById<Button>(R.id.btn_refresh_list)
-        btnRefresh.setOnClickListener {
-            Toast.makeText(this, "운행 목록을 갱신합니다...", Toast.LENGTH_SHORT).show()
-            fetchTrips()
-        }
+        // 수동 새로고침 버튼 코드가 삭제되고 onResume에서 자동 호출되도록 변경됨
         fetchTrips()
     }
 
@@ -439,6 +452,11 @@ class MainActivity : AppCompatActivity(),
                 setTextColor(android.graphics.Color.WHITE)
                 setOnClickListener {
                     currentNaviTripId = tripId
+
+                    // 바텀 시트를 아래로 숨김 처리 (안내 시작 시 맵을 볼 수 있도록)
+                    val bottomSheetBehavior = BottomSheetBehavior.from(binding.bottomSheet)
+                    bottomSheetBehavior.state = BottomSheetBehavior.STATE_COLLAPSED
+
                     fusedLocationClient.lastLocation.addOnSuccessListener { location ->
                         if (location != null) {
                             optimizeAndStartNavi(tripId, destName, lat, lng, location.latitude, location.longitude)
@@ -645,7 +663,6 @@ class MainActivity : AppCompatActivity(),
                                 setupDelegates(this)
                                 naviView.initWithGuidance(this, aTrip, curRoutePriority, curAvoidOptions)
                             }
-                            binding.bottomNav.selectedItemId = R.id.nav_map
                         }
                     } else Log.e("KNSDK", "🚨 경로 탐색 실패: ${error.msg}")
                 }
@@ -888,30 +905,6 @@ class MainActivity : AppCompatActivity(),
         } else {
             Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_LONG).show()
             finish()
-        }
-    }
-
-    private fun setupBottomNavigation() {
-        binding.bottomNav.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_map -> {
-                    binding.runListView.visibility = View.GONE
-                    binding.settingsView.visibility = View.GONE
-                    WindowCompat.getInsetsController(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
-                    true
-                }
-                R.id.nav_list -> {
-                    binding.runListView.visibility = View.VISIBLE
-                    binding.settingsView.visibility = View.GONE
-                    true
-                }
-                R.id.nav_settings -> {
-                    binding.runListView.visibility = View.GONE
-                    binding.settingsView.visibility = View.VISIBLE
-                    true
-                }
-                else -> false
-            }
         }
     }
 
