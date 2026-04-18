@@ -21,6 +21,7 @@
         android:theme="@style/Theme.RouteOn"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
+
         <activity
             android:name=".LoginActivity"
             android:exported="true">
@@ -30,18 +31,20 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".RegisterActivity"
-            android:exported="false" />
+        <activity android:name=".RegisterActivity" android:exported="false" />
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="false" />
+        <activity android:name=".MainActivity" android:exported="false" />
 
         <activity
             android:name=".PendingActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
+
+        <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".NotificationSettingsActivity" android:exported="false" />
+        <activity android:name=".ThemeVibrationSettingsActivity" android:exported="false" />
+        <activity android:name=".VehicleSettingsActivity" android:exported="false" />
+        <activity android:name=".LanguageSettingsActivity" android:exported="false" />
 
     </application>
 </manifest>

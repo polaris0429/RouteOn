@@ -1,186 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <!-- 내비게이션 뷰 컨테이너 (전체 화면) -->
+    <FrameLayout
+        android:id="@+id/naviContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"/>
 
-        <FrameLayout
-            android:id="@+id/navi_container"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+    <!-- 배송/운행 완료 버튼 (근처 도착 시 표시) -->
+    <Button
+        android:id="@+id/btnCompleteTrip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="120dp"
+        android:text="배송 완료"
+        android:visibility="gone"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:textColor="#FFFFFF"
+        app:backgroundTint="#2E7D32"/>
 
-        <Button
-            android:id="@+id/btn_complete_trip"
-            android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:layout_marginHorizontal="20dp"
-            android:layout_marginBottom="110dp"
-            android:text="완료 버튼"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:visibility="gone"
-            android:elevation="6dp"
-            app:cornerRadius="30dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
-    </androidx.constraintlayout.widget.ConstraintLayout>
+    <!-- 설정 FAB (우상단) -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/btnSettings"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="16dp"
+        android:src="@android:drawable/ic_menu_preferences"
+        android:contentDescription="설정"
+        app:backgroundTint="#FFEB00"
+        app:tint="#333333"/>
 
+    <!-- 바텀 시트 (운행 목록) -->
     <LinearLayout
-        android:id="@+id/bottom_sheet"
+        android:id="@+id/bottomSheet"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:background="#FFFFFF"
-        android:elevation="16dp"
-        app:behavior_peekHeight="90dp"
-        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior">
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
+        app:behavior_peekHeight="80dp"
+        app:behavior_hideable="false">
 
-        <androidx.constraintlayout.widget.ConstraintLayout
+        <!-- 드래그 핸들 -->
+        <View
+            android:layout_width="40dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="6dp"
+            android:background="#CCCCCC"/>
+
+        <!-- 헤더 타이틀 -->
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="16dp">
+            android:text="배차 목록"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="#1A1A1A"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="8dp"/>
 
-            <ImageView
-                android:id="@+id/btn_settings"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:src="@android:drawable/ic_menu_preferences"
-                app:tint="#555555"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintBottom_toBottomOf="parent" />
-
-            <View
-                android:layout_width="40dp"
-                android:layout_height="4dp"
-                android:background="#CCCCCC"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"/>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="운행 목록"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:layout_marginTop="12dp"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent" />
-        </androidx.constraintlayout.widget.ConstraintLayout>
-
-        <View
+        <!-- 목록 스크롤 영역 -->
+        <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="#EAEAEA" />
-
-        <androidx.core.widget.NestedScrollView
-            android:id="@+id/run_list_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true">
+            android:layout_height="match_parent">
 
             <LinearLayout
                 android:id="@+id/run_list_container"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="20dp" />
-        </androidx.core.widget.NestedScrollView>
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="24dp"/>
+
+        </ScrollView>
+
     </LinearLayout>
-
-    <ScrollView
-        android:id="@+id/settings_view"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fillViewport="true"
-        android:visibility="gone"
-        android:background="?android:attr/colorBackground"
-        android:elevation="20dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="20dp">
-
-            <androidx.constraintlayout.widget.ConstraintLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="20dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="설정"
-                    android:textSize="22sp"
-                    android:textStyle="bold"
-                    app:layout_constraintTop_toTopOf="parent"
-                    app:layout_constraintStart_toStartOf="parent"/>
-
-                <ImageView
-                    android:id="@+id/btn_close_settings"
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
-                    android:src="@android:drawable/ic_menu_close_clear_cancel"
-                    app:tint="#000000"
-                    app:layout_constraintTop_toTopOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent"/>
-            </androidx.constraintlayout.widget.ConstraintLayout>
-
-            <TextView android:id="@+id/tv_my_id" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="16sp" android:layout_marginBottom="10dp"/>
-            <TextView android:id="@+id/tv_my_phone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="16sp" android:layout_marginBottom="20dp"/>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_edit_info"
-                android:layout_width="match_parent"
-                android:layout_height="55dp"
-                android:text="내 정보 수정"
-                app:cornerRadius="12dp"
-                android:layout_marginBottom="20dp" />
-
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch_dark_mode"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="다크 모드"
-                android:textSize="16sp"
-                android:layout_marginBottom="20dp"/>
-
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="차종 선택" android:textStyle="bold" android:layout_marginTop="10dp" android:layout_marginBottom="10dp"/>
-            <RadioGroup android:id="@+id/rg_car_type" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-                <RadioButton android:id="@+id/rb_car_type_1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="1종" android:checked="true"/>
-                <RadioButton android:id="@+id/rb_car_type_4" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="4종"/>
-                <RadioButton android:id="@+id/rb_car_type_bike" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="이륜차"/>
-            </RadioGroup>
-
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="유종 선택" android:textStyle="bold" android:layout_marginTop="20dp" android:layout_marginBottom="10dp"/>
-            <RadioGroup android:id="@+id/rg_fuel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="30dp">
-                <RadioButton android:id="@+id/rb_fuel_gasoline" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="가솔린" android:checked="true"/>
-                <RadioButton android:id="@+id/rb_fuel_diesel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="디젤"/>
-                <RadioButton android:id="@+id/rb_fuel_electric" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="전기차"/>
-            </RadioGroup>
-
-            <Button
-                android:id="@+id/btn_logout"
-                android:layout_width="match_parent"
-                android:layout_height="55dp"
-                android:text="로그아웃"
-                android:backgroundTint="#E74C3C"
-                android:textColor="#FFFFFF"
-                app:cornerRadius="12dp" />
-        </LinearLayout>
-    </ScrollView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

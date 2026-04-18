@@ -3,5 +3,11 @@
         <item name="colorPrimary">#FFE812</item> <item name="colorOnPrimary">#000000</item>
         <item name="android:windowBackground">#FFFFFF</item>
         <item name="android:textColorPrimary">#000000</item>
+
+    </style>
+    <style name="ToolbarTitleStyle" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">#1A1A1A</item>
+        <item name="android:textStyle">bold</item>
     </style>
 </resources>

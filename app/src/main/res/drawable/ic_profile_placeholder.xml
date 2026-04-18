@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- 배경 원 -->
+    <path
+        android:fillColor="#DDDDDD"
+        android:pathData="M24,24 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0"/>
+    <!-- 얼굴 원 -->
+    <path
+        android:fillColor="#AAAAAA"
+        android:pathData="M24,22 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"/>
+    <!-- 몸통 반원 -->
+    <path
+        android:fillColor="#AAAAAA"
+        android:pathData="M8,42 Q8,30 24,30 Q40,30 40,42 Z"/>
+</vector>
