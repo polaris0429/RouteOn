@@ -6,7 +6,13 @@
     android:layout_height="match_parent"
     android:fitsSystemWindows="true">
 
-    <!-- 내비게이션 뷰 컨테이너 -->
+    <!--
+        naviContainer:
+        - paddingBottom은 onCreate에서 peekHeight(고정값)로 딱 한 번만 설정됨
+        - clipToPadding 기본값(true) → KNNaviView가 padding 영역 밖으로 그려지지 않아
+          바텀시트 peekHeight 바로 위까지만 지도 UI가 표시됨
+        - onSlide에서 paddingBottom을 변경하지 않으므로 시트를 올려도 지도 크기 고정
+    -->
     <FrameLayout
         android:id="@+id/naviContainer"
         android:layout_width="match_parent"
@@ -18,7 +24,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="120dp"
+        android:layout_marginBottom="100dp"
         android:text="배송 완료"
         android:visibility="gone"
         android:paddingStart="24dp"
@@ -46,6 +52,7 @@
             android:layout_marginBottom="6dp"
             android:background="@color/drag_handle"/>
 
+        <!-- 타이틀: 가운데 정렬 -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -53,8 +60,8 @@
             android:textSize="16sp"
             android:textStyle="bold"
             android:textColor="@color/text_primary"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
+            android:gravity="center"
+            android:paddingTop="4dp"
             android:paddingBottom="8dp"/>
 
         <ScrollView

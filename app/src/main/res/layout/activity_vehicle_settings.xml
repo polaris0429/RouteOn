@@ -5,13 +5,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F2F3F5">
+    android:background="@color/bg_page">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:background="#FFFFFF"
+        android:background="@color/toolbar_bg"
         android:elevation="2dp"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:title="차량 설정"
@@ -26,520 +26,322 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="#F2F3F5"/>
+            <View android:layout_width="match_parent" android:layout_height="8dp"
+                android:background="@color/bg_page"/>
 
             <!-- 차량 종류 카드 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="0dp">
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#FFFFFF">
+                    android:orientation="vertical">
 
                     <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="차량 종류 (KNCarType)"
-                        android:textSize="12sp"
-                        android:textColor="#888888"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:paddingTop="16dp"
-                        android:paddingBottom="8dp"/>
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="차량 종류 (KNCarType)" android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:paddingTop="16dp" android:paddingBottom="8dp"/>
 
                     <!-- 1종 소형차 -->
-                    <LinearLayout
-                        android:id="@+id/carType1"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
-                        android:clickable="true"
-                        android:focusable="true">
-
-                        <RadioButton
-                            android:id="@+id/radioCarType1"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:buttonTint="#FFEB00"
-                            android:clickable="false"
-                            android:focusable="false"/>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:layout_marginStart="12dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="1종 소형차"
-                                android:textSize="15sp"
-                                android:textColor="#1A1A1A"/>
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                    <LinearLayout android:id="@+id/carType1"
+                        android:layout_width="match_parent" android:layout_height="64dp"
+                        android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
+                        <RadioButton android:id="@+id/radioCarType1"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:checked="true" android:buttonTint="#4CAF50"
+                            android:clickable="false" android:focusable="false"/>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="1종 소형차" android:textSize="15sp" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="승용차, 16인승 이하 승합차, 2.5톤 미만 화물차"
-                                android:textSize="12sp"
-                                android:textColor="#888888"
-                                android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary" android:layout_marginTop="2dp"/>
                         </LinearLayout>
-
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 2종 중형차 -->
-                    <LinearLayout
-                        android:id="@+id/carType2"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
-                        android:clickable="true"
-                        android:focusable="true">
-
-                        <RadioButton
-                            android:id="@+id/radioCarType2"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00"
-                            android:clickable="false"
-                            android:focusable="false"/>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:layout_marginStart="12dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="2종 중형차"
-                                android:textSize="15sp"
-                                android:textColor="#1A1A1A"/>
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                    <LinearLayout android:id="@+id/carType2"
+                        android:layout_width="match_parent" android:layout_height="64dp"
+                        android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
+                        <RadioButton android:id="@+id/radioCarType2"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="2종 중형차" android:textSize="15sp" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="승합차 17-32인승, 2.5~5.5톤 화물차"
-                                android:textSize="12sp"
-                                android:textColor="#888888"
-                                android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary" android:layout_marginTop="2dp"/>
                         </LinearLayout>
-
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 3종 대형차 -->
-                    <LinearLayout
-                        android:id="@+id/carType3"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
-                        android:clickable="true"
-                        android:focusable="true">
-
-                        <RadioButton
-                            android:id="@+id/radioCarType3"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00"
-                            android:clickable="false"
-                            android:focusable="false"/>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:layout_marginStart="12dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="3종 대형차"
-                                android:textSize="15sp"
-                                android:textColor="#1A1A1A"/>
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                    <LinearLayout android:id="@+id/carType3"
+                        android:layout_width="match_parent" android:layout_height="64dp"
+                        android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
+                        <RadioButton android:id="@+id/radioCarType3"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="3종 대형차" android:textSize="15sp" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="승합차 33인승 이상, 5.5~10톤 화물차"
-                                android:textSize="12sp"
-                                android:textColor="#888888"
-                                android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary" android:layout_marginTop="2dp"/>
                         </LinearLayout>
-
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 4종 대형 화물차 -->
-                    <LinearLayout
-                        android:id="@+id/carType4"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
-                        android:clickable="true"
-                        android:focusable="true">
-
-                        <RadioButton
-                            android:id="@+id/radioCarType4"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00"
-                            android:clickable="false"
-                            android:focusable="false"/>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:layout_marginStart="12dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="4종 대형 화물차"
-                                android:textSize="15sp"
-                                android:textColor="#1A1A1A"/>
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                    <LinearLayout android:id="@+id/carType4"
+                        android:layout_width="match_parent" android:layout_height="64dp"
+                        android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
+                        <RadioButton android:id="@+id/radioCarType4"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="4종 대형 화물차" android:textSize="15sp" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="10~20톤 화물차 (3축 차량)"
-                                android:textSize="12sp"
-                                android:textColor="#888888"
-                                android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary" android:layout_marginTop="2dp"/>
                         </LinearLayout>
-
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 5종 특수 화물차 -->
-                    <LinearLayout
-                        android:id="@+id/carType5"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
-                        android:clickable="true"
-                        android:focusable="true">
-
-                        <RadioButton
-                            android:id="@+id/radioCarType5"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00"
-                            android:clickable="false"
-                            android:focusable="false"/>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:layout_marginStart="12dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="5종 특수 화물차"
-                                android:textSize="15sp"
-                                android:textColor="#1A1A1A"/>
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                    <LinearLayout android:id="@+id/carType5"
+                        android:layout_width="match_parent" android:layout_height="64dp"
+                        android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
+                        <RadioButton android:id="@+id/radioCarType5"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="5종 특수 화물차" android:textSize="15sp" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="20톤 이상 화물차 (4축 이상)"
-                                android:textSize="12sp"
-                                android:textColor="#888888"
-                                android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary" android:layout_marginTop="2dp"/>
                         </LinearLayout>
-
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 6종 경차 -->
-                    <LinearLayout
-                        android:id="@+id/carType6"
-                        android:layout_width="match_parent"
-                        android:layout_height="64dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
-                        android:clickable="true"
-                        android:focusable="true">
-
-                        <RadioButton
-                            android:id="@+id/radioCarType6"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00"
-                            android:clickable="false"
-                            android:focusable="false"/>
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:layout_marginStart="12dp">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="6종 경차"
-                                android:textSize="15sp"
-                                android:textColor="#1A1A1A"/>
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
+                    <LinearLayout android:id="@+id/carType6"
+                        android:layout_width="match_parent" android:layout_height="64dp"
+                        android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
+                        <RadioButton android:id="@+id/radioCarType6"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="6종 경차" android:textSize="15sp" android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="배기량 1,000cc 미만, 길이 3.6m · 너비 1.6m 이하"
-                                android:textSize="12sp"
-                                android:textColor="#888888"
-                                android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary" android:layout_marginTop="2dp"/>
                         </LinearLayout>
-
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 이륜차 -->
-                    <LinearLayout
-                        android:id="@+id/carTypeBike"
-                        android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
-                        android:clickable="true"
-                        android:focusable="true">
-
-                        <RadioButton
-                            android:id="@+id/radioCarTypeBike"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00"
-                            android:clickable="false"
-                            android:focusable="false"/>
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="이륜차"
-                            android:textSize="15sp"
-                            android:textColor="#1A1A1A"
+                    <LinearLayout android:id="@+id/carTypeBike"
+                        android:layout_width="match_parent" android:layout_height="56dp"
+                        android:orientation="horizontal" android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
+                        <RadioButton android:id="@+id/radioCarTypeBike"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:text="이륜차"
+                            android:textSize="15sp" android:textColor="@color/text_primary"
                             android:layout_marginStart="12dp"/>
-
                     </LinearLayout>
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="#F2F3F5"/>
+            <View android:layout_width="match_parent" android:layout_height="8dp"
+                android:background="@color/bg_page"/>
 
             <!-- 연료 종류 카드 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="0dp">
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#FFFFFF">
+                    android:orientation="vertical">
 
                     <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="연료 종류 (KNCarFuel)"
-                        android:textSize="12sp"
-                        android:textColor="#888888"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:paddingTop="16dp"
-                        android:paddingBottom="8dp"/>
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="연료 종류 (KNCarFuel)" android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:paddingTop="16dp" android:paddingBottom="8dp"/>
 
                     <!-- 휘발유 -->
                     <LinearLayout android:id="@+id/fuelGasoline"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelGasoline"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:checked="true" android:buttonTint="#FFEB00"
+                            android:checked="true" android:buttonTint="#4CAF50"
                             android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="휘발유 (가솔린)"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 고급 휘발유 -->
                     <LinearLayout android:id="@+id/fuelPremiumGasoline"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelPremiumGasoline"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00" android:clickable="false" android:focusable="false"/>
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="고급 휘발유"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 경유 -->
                     <LinearLayout android:id="@+id/fuelDiesel"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelDiesel"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00" android:clickable="false" android:focusable="false"/>
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="경유 (디젤)"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- LPG -->
                     <LinearLayout android:id="@+id/fuelLPG"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelLPG"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00" android:clickable="false" android:focusable="false"/>
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="LPG (액화 석유 가스)"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 전기 -->
                     <LinearLayout android:id="@+id/fuelElectric"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelElectric"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00" android:clickable="false" android:focusable="false"/>
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="전기"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 하이브리드 -->
                     <LinearLayout android:id="@+id/fuelHybrid"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelHybrid"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00" android:clickable="false" android:focusable="false"/>
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="하이브리드 전기"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 플러그인 하이브리드 -->
                     <LinearLayout android:id="@+id/fuelPlugInHybrid"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelPlugInHybrid"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00" android:clickable="false" android:focusable="false"/>
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="플러그인 하이브리드 전기"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
-
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="52dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="52dp" android:background="@color/divider"/>
 
                     <!-- 수소 -->
                     <LinearLayout android:id="@+id/fuelHydrogen"
                         android:layout_width="match_parent" android:layout_height="52dp"
                         android:orientation="horizontal" android:gravity="center_vertical"
                         android:paddingStart="20dp" android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white" android:clickable="true" android:focusable="true">
+                        android:background="@drawable/ripple_surface" android:clickable="true" android:focusable="true">
                         <RadioButton android:id="@+id/radioFuelHydrogen"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:buttonTint="#FFEB00" android:clickable="false" android:focusable="false"/>
+                            android:buttonTint="#4CAF50" android:clickable="false" android:focusable="false"/>
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
                             android:layout_weight="1" android:text="수소"
-                            android:textSize="15sp" android:textColor="#1A1A1A" android:layout_marginStart="12dp"/>
+                            android:textSize="15sp" android:textColor="@color/text_primary" android:layout_marginStart="12dp"/>
                     </LinearLayout>
 
                 </LinearLayout>
