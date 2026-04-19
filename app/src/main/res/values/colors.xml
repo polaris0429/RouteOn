@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 기본 -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- 배경 -->
+    <color name="bg_page">#F2F3F5</color>       <!-- 페이지 전체 배경 (회색) -->
+    <color name="bg_surface">#FFFFFF</color>     <!-- 카드/시트 배경 (흰색) -->
+    <color name="bg_bottom_sheet">#FFFFFF</color><!-- 바텀 시트 배경 -->
+
+    <!-- 텍스트 -->
+    <color name="text_primary">#1A1A1A</color>
+    <color name="text_secondary">#888888</color>
+    <color name="text_hint">#AAAAAA</color>
+
+    <!-- 구분선 / 핸들 -->
+    <color name="divider">#E5E5E5</color>
+    <color name="drag_handle">#CCCCCC</color>
+
+    <!-- 툴바 -->
+    <color name="toolbar_bg">#FFFFFF</color>
+    <color name="toolbar_title">#1A1A1A</color>
+
+    <!-- 브랜드 -->
+    <color name="brand_green">#2E7D32</color>
+    <color name="brand_green_light">#4CAF50</color>
 </resources>

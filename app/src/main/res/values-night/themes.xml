@@ -1,12 +1,18 @@
 <resources>
-    <!-- 야간 모드: 배경 어둡게 -->
     <style name="Theme.RouteOn" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#2E7D32</item>
+        <item name="colorPrimary">@color/brand_green</item>
         <item name="colorPrimaryVariant">#1B5E20</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#4CAF50</item>
+        <item name="colorSecondary">@color/brand_green_light</item>
         <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="android:windowBackground">#121212</item>
-        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:windowBackground">@color/bg_page</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+    </style>
+
+    <style name="ToolbarTitleStyle" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/toolbar_title</item>
+        <item name="android:textStyle">bold</item>
     </style>
 </resources>

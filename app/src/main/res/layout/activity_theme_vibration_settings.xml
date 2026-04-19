@@ -5,13 +5,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F2F3F5">
+    android:background="@color/bg_page">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:background="#FFFFFF"
+        android:background="@color/toolbar_bg"
         android:elevation="2dp"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:title="화면 테마 · 진동"
@@ -26,42 +26,39 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="#F2F3F5"/>
+            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="@color/bg_page"/>
 
             <!-- 화면 모드 카드 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="0dp">
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#FFFFFF">
+                    android:orientation="vertical">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="화면 모드"
                         android:textSize="12sp"
-                        android:textColor="#888888"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:paddingTop="16dp"
-                        android:paddingBottom="8dp"/>
+                        android:textColor="@color/text_secondary"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:paddingTop="16dp" android:paddingBottom="8dp"/>
 
+                    <!-- 주간/야간 선택 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
                         android:paddingBottom="16dp"
                         android:weightSum="2">
 
-                        <!-- 주간 모드 -->
                         <LinearLayout
                             android:id="@+id/optionDayMode"
                             android:layout_width="0dp"
@@ -77,10 +74,9 @@
                                 android:text="☀️" android:textSize="28sp"/>
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="주간 모드" android:textSize="14sp"
-                                android:textColor="#1A1A1A" android:layout_marginTop="6dp"/>
+                                android:textColor="@color/text_primary" android:layout_marginTop="6dp"/>
                         </LinearLayout>
 
-                        <!-- 야간 모드 -->
                         <LinearLayout
                             android:id="@+id/optionNightMode"
                             android:layout_width="0dp"
@@ -96,33 +92,32 @@
                                 android:text="🌙" android:textSize="28sp"/>
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="야간 모드" android:textSize="14sp"
-                                android:textColor="#1A1A1A" android:layout_marginTop="6dp"/>
+                                android:textColor="@color/text_primary" android:layout_marginTop="6dp"/>
                         </LinearLayout>
 
                     </LinearLayout>
 
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:background="#E5E5E5"/>
+                        android:background="@color/divider"/>
 
-                    <!-- 자동 밝기 조절 -->
+                    <!-- 시스템 설정 따라가기 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="56dp"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp">
+                        android:paddingStart="20dp" android:paddingEnd="20dp">
 
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                android:text="시스템 설정 따라가기" android:textSize="15sp" android:textColor="#1A1A1A"/>
+                                android:text="시스템 설정 따라가기" android:textSize="15sp"
+                                android:textColor="@color/text_primary"/>
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                android:text="기기의 다크모드 설정을 자동으로 반영"
-                                android:textSize="12sp" android:textColor="#888888" android:layout_marginTop="2dp"/>
+                                android:text="기기 다크모드 설정을 자동 반영"
+                                android:textSize="12sp" android:textColor="@color/text_secondary"
+                                android:layout_marginTop="2dp"/>
                         </LinearLayout>
 
                         <Switch
@@ -132,37 +127,75 @@
                             android:checked="false"
                             android:thumbTint="#4CAF50"
                             android:trackTint="#4CAF5066"/>
+                    </LinearLayout>
 
+                    <View android:layout_width="match_parent" android:layout_height="0.5dp"
+                        android:background="@color/divider"/>
+
+                    <!-- 조도 센서 자동 전환 (새 옵션) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:paddingTop="12dp" android:paddingBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="조도 센서 자동 전환" android:textSize="15sp"
+                                android:textColor="@color/text_primary"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="주변 밝기에 따라 자동으로 전환 (임계값: 20 lux)"
+                                android:textSize="12sp" android:textColor="@color/text_secondary"
+                                android:layout_marginTop="2dp"/>
+                            <TextView
+                                android:id="@+id/tvLuxValue"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="현재: 측정 중..."
+                                android:textSize="11sp"
+                                android:textColor="@color/brand_green_light"
+                                android:layout_marginTop="2dp"/>
+                        </LinearLayout>
+
+                        <Switch
+                            android:id="@+id/switchLightSensor"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="false"
+                            android:thumbTint="#4CAF50"
+                            android:trackTint="#4CAF5066"/>
                     </LinearLayout>
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="#F2F3F5"/>
+            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="@color/bg_page"/>
 
             <!-- 진동 카드 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="0dp">
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#FFFFFF">
+                    android:orientation="vertical">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="진동"
                         android:textSize="12sp"
-                        android:textColor="#888888"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp"
-                        android:paddingTop="16dp"
-                        android:paddingBottom="8dp"/>
+                        android:textColor="@color/text_secondary"
+                        android:paddingStart="20dp" android:paddingEnd="20dp"
+                        android:paddingTop="16dp" android:paddingBottom="8dp"/>
 
                     <!-- 안내 진동 -->
                     <LinearLayout
@@ -170,19 +203,18 @@
                         android:layout_height="56dp"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp">
+                        android:paddingStart="20dp" android:paddingEnd="20dp">
 
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                android:text="안내 진동" android:textSize="15sp" android:textColor="#1A1A1A"/>
+                                android:text="안내 진동" android:textSize="15sp"
+                                android:textColor="@color/text_primary"/>
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="음성 안내 시 진동으로 알림"
-                                android:textSize="12sp" android:textColor="#888888" android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary"
+                                android:layout_marginTop="2dp"/>
                         </LinearLayout>
 
                         <Switch
@@ -192,11 +224,10 @@
                             android:checked="false"
                             android:thumbTint="#4CAF50"
                             android:trackTint="#4CAF5066"/>
-
                     </LinearLayout>
 
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="20dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="20dp" android:background="@color/divider"/>
 
                     <!-- 터치 햅틱 -->
                     <LinearLayout
@@ -204,19 +235,18 @@
                         android:layout_height="56dp"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
-                        android:paddingStart="20dp"
-                        android:paddingEnd="20dp">
+                        android:paddingStart="20dp" android:paddingEnd="20dp">
 
                         <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:orientation="vertical">
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                                android:text="터치 햅틱" android:textSize="15sp" android:textColor="#1A1A1A"/>
+                                android:text="터치 햅틱" android:textSize="15sp"
+                                android:textColor="@color/text_primary"/>
                             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                                 android:text="버튼 터치 시 진동 피드백"
-                                android:textSize="12sp" android:textColor="#888888" android:layout_marginTop="2dp"/>
+                                android:textSize="12sp" android:textColor="@color/text_secondary"
+                                android:layout_marginTop="2dp"/>
                         </LinearLayout>
 
                         <Switch
@@ -226,7 +256,6 @@
                             android:checked="true"
                             android:thumbTint="#4CAF50"
                             android:trackTint="#4CAF5066"/>
-
                     </LinearLayout>
 
                 </LinearLayout>

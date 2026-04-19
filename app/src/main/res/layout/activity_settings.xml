@@ -5,14 +5,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F2F3F5">
+    android:background="@color/bg_page">
 
-    <!-- 상단 툴바 -->
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:background="#FFFFFF"
+        android:background="@color/toolbar_bg"
         android:elevation="2dp"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:navigationContentDescription="뒤로가기"/>
@@ -26,12 +25,13 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- ── 내 정보 섹션 ── -->
+            <!-- 내 정보 섹션 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="0dp">
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
 
                 <LinearLayout
                     android:id="@+id/profileSection"
@@ -41,16 +41,12 @@
                     android:gravity="center_vertical"
                     android:paddingStart="20dp"
                     android:paddingEnd="20dp"
-                    android:background="@drawable/ripple_white"
+                    android:background="@drawable/ripple_surface"
                     android:clickable="true"
                     android:focusable="true">
 
-                    <FrameLayout
-                        android:layout_width="48dp"
-                        android:layout_height="48dp">
-                        <ImageView
-                            android:layout_width="48dp"
-                            android:layout_height="48dp"
+                    <FrameLayout android:layout_width="48dp" android:layout_height="48dp">
+                        <ImageView android:layout_width="48dp" android:layout_height="48dp"
                             android:src="@android:drawable/ic_menu_myplaces"
                             android:contentDescription="프로필"/>
                     </FrameLayout>
@@ -69,16 +65,15 @@
                             android:text="사용자"
                             android:textSize="17sp"
                             android:textStyle="bold"
-                            android:textColor="#1A1A1A"/>
+                            android:textColor="@color/text_primary"/>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="내 정보 · 주소 관리"
                             android:textSize="13sp"
-                            android:textColor="#888888"
+                            android:textColor="@color/text_secondary"
                             android:layout_marginTop="2dp"/>
-
                     </LinearLayout>
 
                     <ImageView
@@ -87,24 +82,23 @@
                         android:src="@drawable/ic_chevron_right"
                         android:contentDescription=""
                         android:alpha="0.4"/>
-
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="#F2F3F5"/>
+            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="@color/bg_page"/>
 
-            <!-- ── 일반 설정 카드 ── -->
+            <!-- 일반 설정 카드 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="0dp">
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:background="#FFFFFF">
+                    android:orientation="vertical">
 
                     <!-- 언어 -->
                     <LinearLayout
@@ -115,38 +109,22 @@
                         android:gravity="center_vertical"
                         android:paddingStart="20dp"
                         android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
+                        android:background="@drawable/ripple_surface"
                         android:clickable="true"
                         android:focusable="true">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="언어"
-                            android:textSize="15sp"
-                            android:textColor="#1A1A1A"/>
-
-                        <TextView
-                            android:id="@+id/tvLanguageValue"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="한국어"
-                            android:textSize="14sp"
-                            android:textColor="#3A86FF"
-                            android:layout_marginEnd="6dp"/>
-
-                        <ImageView
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:src="@drawable/ic_chevron_right"
-                            android:alpha="0.4"
-                            android:contentDescription=""/>
-
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:text="언어"
+                            android:textSize="15sp" android:textColor="@color/text_primary"/>
+                        <TextView android:id="@+id/tvLanguageValue"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="한국어" android:textSize="14sp"
+                            android:textColor="@color/brand_green_light" android:layout_marginEnd="6dp"/>
+                        <ImageView android:layout_width="16dp" android:layout_height="16dp"
+                            android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
                     </LinearLayout>
 
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="20dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="20dp" android:background="@color/divider"/>
 
                     <!-- 알림 -->
                     <LinearLayout
@@ -157,29 +135,18 @@
                         android:gravity="center_vertical"
                         android:paddingStart="20dp"
                         android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
+                        android:background="@drawable/ripple_surface"
                         android:clickable="true"
                         android:focusable="true">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="알림"
-                            android:textSize="15sp"
-                            android:textColor="#1A1A1A"/>
-
-                        <ImageView
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:src="@drawable/ic_chevron_right"
-                            android:alpha="0.4"
-                            android:contentDescription=""/>
-
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:text="알림"
+                            android:textSize="15sp" android:textColor="@color/text_primary"/>
+                        <ImageView android:layout_width="16dp" android:layout_height="16dp"
+                            android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
                     </LinearLayout>
 
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="20dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="20dp" android:background="@color/divider"/>
 
                     <!-- 화면 테마 · 진동 -->
                     <LinearLayout
@@ -190,29 +157,18 @@
                         android:gravity="center_vertical"
                         android:paddingStart="20dp"
                         android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
+                        android:background="@drawable/ripple_surface"
                         android:clickable="true"
                         android:focusable="true">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="화면 테마 · 진동"
-                            android:textSize="15sp"
-                            android:textColor="#1A1A1A"/>
-
-                        <ImageView
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:src="@drawable/ic_chevron_right"
-                            android:alpha="0.4"
-                            android:contentDescription=""/>
-
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:text="화면 테마 · 진동"
+                            android:textSize="15sp" android:textColor="@color/text_primary"/>
+                        <ImageView android:layout_width="16dp" android:layout_height="16dp"
+                            android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
                     </LinearLayout>
 
                     <View android:layout_width="match_parent" android:layout_height="0.5dp"
-                        android:layout_marginStart="20dp" android:background="#E5E5E5"/>
+                        android:layout_marginStart="20dp" android:background="@color/divider"/>
 
                     <!-- 차량 설정 -->
                     <LinearLayout
@@ -223,38 +179,28 @@
                         android:gravity="center_vertical"
                         android:paddingStart="20dp"
                         android:paddingEnd="20dp"
-                        android:background="@drawable/ripple_white"
+                        android:background="@drawable/ripple_surface"
                         android:clickable="true"
                         android:focusable="true">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="차량 설정"
-                            android:textSize="15sp"
-                            android:textColor="#1A1A1A"/>
-
-                        <ImageView
-                            android:layout_width="16dp"
-                            android:layout_height="16dp"
-                            android:src="@drawable/ic_chevron_right"
-                            android:alpha="0.4"
-                            android:contentDescription=""/>
-
+                        <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:text="차량 설정"
+                            android:textSize="15sp" android:textColor="@color/text_primary"/>
+                        <ImageView android:layout_width="16dp" android:layout_height="16dp"
+                            android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
                     </LinearLayout>
 
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="#F2F3F5"/>
+            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="@color/bg_page"/>
 
-            <!-- ── 로그아웃 카드 ── -->
+            <!-- 로그아웃 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="0dp">
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
 
                 <LinearLayout
                     android:id="@+id/menuLogout"
@@ -264,22 +210,16 @@
                     android:gravity="center_vertical"
                     android:paddingStart="20dp"
                     android:paddingEnd="20dp"
-                    android:background="@drawable/ripple_white"
+                    android:background="@drawable/ripple_surface"
                     android:clickable="true"
                     android:focusable="true">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="로그아웃"
-                        android:textSize="15sp"
-                        android:textColor="#E74C3C"/>
-
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:text="로그아웃"
+                        android:textSize="15sp" android:textColor="#E74C3C"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <View android:layout_width="match_parent" android:layout_height="24dp" android:background="#F2F3F5"/>
+            <View android:layout_width="match_parent" android:layout_height="24dp" android:background="@color/bg_page"/>
 
         </LinearLayout>
     </ScrollView>

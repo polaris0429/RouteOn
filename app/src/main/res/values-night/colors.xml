@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 배경 -->
+    <color name="bg_page">#101010</color>
+    <color name="bg_surface">#1E1E1E</color>
+    <color name="bg_bottom_sheet">#1E1E1E</color>
+
+    <!-- 텍스트 -->
+    <color name="text_primary">#E0E0E0</color>
+    <color name="text_secondary">#888888</color>
+    <color name="text_hint">#555555</color>
+
+    <!-- 구분선 / 핸들 -->
+    <color name="divider">#333333</color>
+    <color name="drag_handle">#444444</color>
+
+    <!-- 툴바 -->
+    <color name="toolbar_bg">#1E1E1E</color>
+    <color name="toolbar_title">#E0E0E0</color>
+
+    <!-- 브랜드 (다크에서도 동일) -->
+    <color name="brand_green">#2E7D32</color>
+    <color name="brand_green_light">#4CAF50</color>
+</resources>

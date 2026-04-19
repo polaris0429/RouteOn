@@ -3,15 +3,16 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
 
-    <!-- 내비게이션 뷰 컨테이너 (전체 화면) -->
+    <!-- 내비게이션 뷰 컨테이너 -->
     <FrameLayout
         android:id="@+id/naviContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 
-    <!-- 배송/운행 완료 버튼 -->
+    <!-- 배송 완료 버튼 -->
     <Button
         android:id="@+id/btnCompleteTrip"
         android:layout_width="wrap_content"
@@ -23,7 +24,7 @@
         android:paddingStart="24dp"
         android:paddingEnd="24dp"
         android:textColor="#FFFFFF"
-        app:backgroundTint="#2E7D32"/>
+        app:backgroundTint="@color/brand_green"/>
 
     <!-- 바텀 시트 (운행 목록) -->
     <LinearLayout
@@ -31,7 +32,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:background="#FFFFFF"
+        android:background="@color/bg_bottom_sheet"
         app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
         app:behavior_peekHeight="80dp"
         app:behavior_hideable="false">
@@ -43,7 +44,7 @@
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="10dp"
             android:layout_marginBottom="6dp"
-            android:background="#CCCCCC"/>
+            android:background="@color/drag_handle"/>
 
         <TextView
             android:layout_width="match_parent"
@@ -51,7 +52,7 @@
             android:text="배차 목록"
             android:textSize="16sp"
             android:textStyle="bold"
-            android:textColor="#1A1A1A"
+            android:textColor="@color/text_primary"
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
             android:paddingBottom="8dp"/>
@@ -68,13 +69,12 @@
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:paddingBottom="100dp"/>
-            <!-- paddingBottom=100dp: FAB 뒤에 목록이 가리지 않도록 -->
 
         </ScrollView>
 
     </LinearLayout>
 
-    <!-- 설정 FAB: 바텀시트가 완전히 펼쳐졌을 때만 보임 (오른쪽 하단) -->
+    <!-- 설정 FAB (바텀시트 완전 펼쳐졌을 때 오른쪽 하단) -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/btnSettings"
         android:layout_width="wrap_content"
@@ -84,7 +84,7 @@
         android:src="@android:drawable/ic_menu_preferences"
         android:contentDescription="설정"
         android:visibility="gone"
-        app:backgroundTint="#2E7D32"
+        app:backgroundTint="@color/brand_green"
         app:tint="#FFFFFF"/>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
