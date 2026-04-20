@@ -47,7 +47,7 @@
 
                     <FrameLayout android:layout_width="48dp" android:layout_height="48dp">
                         <ImageView android:layout_width="48dp" android:layout_height="48dp"
-                            android:src="@android:drawable/ic_menu_myplaces"
+                            android:src="@drawable/ic_profile_placeholder"
                             android:contentDescription="프로필"/>
                     </FrameLayout>
 
