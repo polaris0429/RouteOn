@@ -140,17 +140,14 @@ class MainActivity : AppCompatActivity(),
                     if (newState == BottomSheetBehavior.STATE_EXPANDED) View.VISIBLE else View.GONE
             }
             override fun onSlide(bottomSheet: View, slideOffset: Float) {
-                // FAB 페이드인 (90% 이상부터) — naviContainer 크기는 변경하지 않음
+                // FAB 페이드인 (90% 이상부터)
                 binding.btnSettings.alpha = ((slideOffset - 0.9f) / 0.1f).coerceIn(0f, 1f)
             }
         })
 
-        // naviContainer 하단 padding = peekHeight (고정값, 한 번만 설정)
-        // clipToPadding 기본값(true) 이므로 KNNaviView는 padding 아래로 그려지지 않음
-        // → 시트가 올라가도 지도 크기 변하지 않음
-        binding.naviContainer.post {
-            binding.naviContainer.setPadding(0, 0, 0, bsb.peekHeight)
-        }
+        // naviContainer는 padding 없이 화면 전체를 채움.
+        // 바텀시트가 CoordinatorLayout 안에서 naviContainer 위에 떠있으므로
+        // 배차목록 바로 위까지 네비 화면이 자연스럽게 표시됨.
 
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -583,10 +580,6 @@ class MainActivity : AppCompatActivity(),
                         binding.naviContainer.addView(naviView)
                         applyNaviSettings()
                         guidance.apply { setupDelegates(this); naviView.initWithGuidance(this, aTrip, pri, avoid) }
-                        // 안내 시작 후에도 padding 고정 유지
-                        binding.naviContainer.post {
-                            binding.naviContainer.setPadding(0, 0, 0, bottomSheetBehavior?.peekHeight ?: 0)
-                        }
                     } else Log.e("KNSDK", "탐색 실패: ${error.msg}")
                 }
             }
@@ -717,10 +710,6 @@ class MainActivity : AppCompatActivity(),
                     binding.naviContainer.addView(naviView)
                     applyNaviSettings()
                     startSafeDriving()
-                    // 초기화 직후에도 padding 설정
-                    binding.naviContainer.post {
-                        binding.naviContainer.setPadding(0, 0, 0, bottomSheetBehavior?.peekHeight ?: 0)
-                    }
                 }
             }
         )
@@ -750,9 +739,6 @@ class MainActivity : AppCompatActivity(),
             binding.naviContainer.addView(naviView)
             applyNaviSettings()
             startSafeDriving()
-            binding.naviContainer.post {
-                binding.naviContainer.setPadding(0, 0, 0, bottomSheetBehavior?.peekHeight ?: 0)
-            }
         }
     }
 
