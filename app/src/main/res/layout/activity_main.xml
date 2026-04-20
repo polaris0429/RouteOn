@@ -8,15 +8,16 @@
 
     <!--
         naviContainer:
-        - paddingBottom은 onCreate에서 peekHeight(고정값)로 딱 한 번만 설정됨
-        - clipToPadding 기본값(true) → KNNaviView가 padding 영역 밖으로 그려지지 않아
-          바텀시트 peekHeight 바로 위까지만 지도 UI가 표시됨
-        - onSlide에서 paddingBottom을 변경하지 않으므로 시트를 올려도 지도 크기 고정
+        - layout_marginBottom = peekHeight(80dp) 고정
+        - 배차목록 peek 영역(80dp)을 제외한 나머지 화면만 채움
+        - 시트가 올라가도 naviContainer 크기는 변하지 않으며,
+          시트가 naviContainer 위에 자연스럽게 올라와서 가림
     -->
     <FrameLayout
         android:id="@+id/naviContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
+        android:layout_height="match_parent"
+        android:layout_marginBottom="48dp" />
 
     <!-- 배송 완료 버튼 -->
     <Button
