@@ -30,6 +30,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.routeon.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -114,6 +115,11 @@ class MainActivity : AppCompatActivity(),
     // BottomSheet
     private var bottomSheetBehavior: BottomSheetBehavior<LinearLayout>? = null
 
+    // 현재 다크모드 여부를 Configuration 기준으로 판단
+    private val isNightMode: Boolean
+        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+
     // =========================================================================
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,14 +127,13 @@ class MainActivity : AppCompatActivity(),
         // 시스템바 정상 표시 (콘텐츠가 뒤에 안 깔리게)
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
-        // 하단 네비게이션바 색상을 시트 배경색과 동일하게 설정
-        // → 배차목록 글자가 네비게이션바에 비쳐 보이는 반투명 문제 해결
-        updateNavigationBarColor()
-
         KNSDK.install(application, "$filesDir/knsdk")
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // ── setContentView 이후에 호출해야 decorView가 준비되어 정상 작동 ──
+        applySystemBarsColor()
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -145,14 +150,9 @@ class MainActivity : AppCompatActivity(),
                     if (newState == BottomSheetBehavior.STATE_EXPANDED) View.VISIBLE else View.GONE
             }
             override fun onSlide(bottomSheet: View, slideOffset: Float) {
-                // FAB 페이드인 (90% 이상부터)
                 binding.btnSettings.alpha = ((slideOffset - 0.9f) / 0.1f).coerceIn(0f, 1f)
-                // naviContainer 크기는 변경하지 않음 — 시트가 자연스럽게 위에 올라와 가림
             }
         })
-
-        // naviContainer는 XML에서 layout_marginBottom="80dp" (peekHeight)로 고정되어 있음
-        // → 코드에서 padding/크기 변경 불필요
 
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -163,38 +163,51 @@ class MainActivity : AppCompatActivity(),
         connectWebSocket()
     }
 
-    // 하단 네비게이션바 배경색을 현재 테마의 시트 배경색과 맞춤
-    private fun updateNavigationBarColor() {
-        val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val navBarColor = if (isDark) Color.parseColor("#1E1E1E") else Color.WHITE
-        window.navigationBarColor = navBarColor
+    /**
+     * 상단 상태바(시계·배터리)와 하단 네비게이션바(홈·뒤로·멀티) 색상을
+     * 현재 Configuration의 실제 야간 모드 여부로 결정.
+     *
+     * ※ 반드시 setContentView() 이후에 호출해야 window.decorView가 준비됨.
+     */
+    private fun applySystemBarsColor() {
+        val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
+
+        window.statusBarColor     = barColor
+        window.navigationBarColor = barColor
+
+        // isAppearanceLightXxx = true  → 아이콘을 어둡게(흰 배경용)
+        // isAppearanceLightXxx = false → 아이콘을 밝게(어두운 배경용)
+        val ic = WindowInsetsControllerCompat(window, window.decorView)
+        ic.isAppearanceLightStatusBars     = !isNightMode
+        ic.isAppearanceLightNavigationBars = !isNightMode
     }
 
-    // configChanges="uiMode" → 테마 변경 시 Activity 재생성 없이 이 메서드만 호출
+    // configChanges="uiMode" → 테마 전환 시 Activity 재생성 없이 여기만 호출됨
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
 
         val isDark = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
-        // 네비뷰 다크모드 즉시 전환
+        // 1. 네비뷰 다크모드 즉시 전환 (Configuration 기준)
         if (::naviView.isInitialized) naviView.useDarkMode = isDark
 
-        // 바텀시트 UI 색상 즉시 갱신
-        val bgColor    = ResourcesCompat.getColor(resources, R.color.bg_bottom_sheet, theme)
-        val textColor  = ResourcesCompat.getColor(resources, R.color.text_primary, theme)
+        // 2. 바텀시트 UI 색상 갱신
+        val bgColor     = ResourcesCompat.getColor(resources, R.color.bg_bottom_sheet, theme)
+        val textColor   = ResourcesCompat.getColor(resources, R.color.text_primary, theme)
         val handleColor = ResourcesCompat.getColor(resources, R.color.drag_handle, theme)
         binding.bottomSheet.setBackgroundColor(bgColor)
         binding.bottomSheet.getChildAt(0)?.setBackgroundColor(handleColor)
         binding.bottomSheet.getChildAt(1)?.let { if (it is TextView) it.setTextColor(textColor) }
 
-        // 하단 네비게이션바 색상도 함께 갱신
-        val navBarColor = if (isDark) Color.parseColor("#1E1E1E") else Color.WHITE
-        window.navigationBarColor = navBarColor
+        // 3. 시스템바 색상/아이콘 갱신
+        applySystemBarsColor()
     }
 
     override fun onResume() {
         super.onResume()
         fetchTrips()
+        // 설정 화면에서 돌아올 때 시스템바 색상 재적용
+        applySystemBarsColor()
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null) {
             sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
@@ -215,7 +228,7 @@ class MainActivity : AppCompatActivity(),
         val now = System.currentTimeMillis()
         if (now - lastSwitchTime < SWITCH_DEBOUNCE_MS) return
         val shouldBeDark  = lux < DARK_THRESHOLD
-        val currentlyDark = prefs.getBoolean("dark_mode", false)
+        val currentlyDark = isNightMode
         if (shouldBeDark != currentlyDark) {
             lastSwitchTime = now
             prefs.edit().putBoolean("dark_mode", shouldBeDark).apply()
@@ -224,10 +237,7 @@ class MainActivity : AppCompatActivity(),
                     if (shouldBeDark) androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
                     else              androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
                 )
-                if (::naviView.isInitialized) naviView.useDarkMode = shouldBeDark
-                // 조도센서 전환 시에도 네비게이션바 색상 갱신
-                val navColor = if (shouldBeDark) Color.parseColor("#1E1E1E") else Color.WHITE
-                window.navigationBarColor = navColor
+                // onConfigurationChanged가 자동 호출되므로 여기서 중복 처리 불필요
             }
         }
     }
@@ -433,9 +443,8 @@ class MainActivity : AppCompatActivity(),
         val container = findViewById<LinearLayout>(R.id.run_list_container)
         container.removeAllViews()
 
-        val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val titleColor  = if (isDark) Color.parseColor("#E0E0E0") else Color.BLACK
-        val statusColor = if (isDark) Color.parseColor("#AAAAAA") else Color.DKGRAY
+        val titleColor  = if (isNightMode) Color.parseColor("#E0E0E0") else Color.BLACK
+        val statusColor = if (isNightMode) Color.parseColor("#AAAAAA") else Color.DKGRAY
 
         if (jsonArray.length() == 0) {
             container.addView(TextView(this).apply {
@@ -449,7 +458,7 @@ class MainActivity : AppCompatActivity(),
             val tripId   = obj.optString("id", "")
             val destName = obj.optString("dest_name", obj.optString("address", "목적지 없음"))
             val lat = obj.optDouble("dest_lat", obj.optDouble("lat", 0.0))
-            val lng = obj.optDouble("dest_son", obj.optDouble("dest_lng", obj.optDouble("lon", obj.optDouble("lng", 0.0))))
+            val lng = obj.optDouble("dest_lon", obj.optDouble("dest_lng", obj.optDouble("lon", obj.optDouble("lng", 0.0))))
             val status   = obj.optString("status", "대기")
 
             val itemLayout = LinearLayout(this).apply {
@@ -640,10 +649,18 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
+    /**
+     * naviView에 설정 적용.
+     * useDarkMode는 SharedPreferences가 아닌 실제 Configuration을 기준으로 결정.
+     * → 라이트 테마 선택 시 야간 지도가 표시되는 문제 해결.
+     */
     private fun applyNaviSettings() {
         if (!::naviView.isInitialized) return
         val sp = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-        naviView.useDarkMode = sp.getBoolean("dark_mode", false)
+
+        // ── 핵심 수정: SharedPreferences가 아닌 현재 Configuration 기준 ──
+        naviView.useDarkMode = isNightMode
+
         naviView.fuelType = when (sp.getInt("fuel_type", 0)) {
             2 -> KNCarFuel.KNCarFuel_Diesel;    3 -> KNCarFuel.KNCarFuel_LPG
             4 -> KNCarFuel.KNCarFuel_Electric;  5 -> KNCarFuel.KNCarFuel_HybridElectric

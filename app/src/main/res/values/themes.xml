@@ -8,6 +8,7 @@
         <item name="android:windowBackground">@color/bg_page</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
+        <!-- bar 색상은 코드에서만 제어 — 테마 속성 제거하여 충돌 방지 -->
     </style>
 
     <style name="ToolbarTitleStyle" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">
