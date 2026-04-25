@@ -1,6 +1,8 @@
 package com.example.routeon
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -9,8 +11,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
 import androidx.core.os.LocaleListCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 class LanguageSettingsActivity : AppCompatActivity() {
+
+    private val isNightMode: Boolean
+        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
 
     // 언어코드 → (행 레이아웃 id, 라디오 id, 표시 이름)
     private val languageMap = listOf(
@@ -23,6 +30,7 @@ class LanguageSettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_language_settings)
+        applySystemBarsColor()
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -57,5 +65,24 @@ class LanguageSettingsActivity : AppCompatActivity() {
                 Toast.makeText(this, "언어가 변경되었습니다.", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applySystemBarsColor()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBarsColor()
+    }
+
+    private fun applySystemBarsColor() {
+        val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
+        window.statusBarColor     = barColor
+        window.navigationBarColor = barColor
+        val ic = WindowInsetsControllerCompat(window, window.decorView)
+        ic.isAppearanceLightStatusBars     = !isNightMode
+        ic.isAppearanceLightNavigationBars = !isNightMode
     }
 }

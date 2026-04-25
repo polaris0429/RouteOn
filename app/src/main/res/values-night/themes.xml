@@ -8,11 +8,9 @@
         <item name="android:windowBackground">@color/bg_page</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
-        <!-- 다크 모드: 상단 상태바 어두운 색 -->
-        <item name="android:statusBarColor">@color/bg_surface</item>
-        <item name="android:navigationBarColor">@color/bg_surface</item>
-        <!-- 다크 모드: 상태바·네비게이션바 아이콘을 밝은 색으로 -->
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- bar 색상·아이콘은 코드(applySystemBarsColor)에서만 제어 -->
+        <!-- 단, 네비게이션바는 테마에서도 black으로 고정하여 코드 적용 전 깜빡임 방지 -->
+        <item name="android:navigationBarColor">#FF000000</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
 

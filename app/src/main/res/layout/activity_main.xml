@@ -3,21 +3,14 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:fitsSystemWindows="true">
+    android:layout_height="match_parent">
 
-    <!--
-        naviContainer:
-        - layout_marginBottom = peekHeight(80dp) 고정
-        - 배차목록 peek 영역(80dp)을 제외한 나머지 화면만 채움
-        - 시트가 올라가도 naviContainer 크기는 변하지 않으며,
-          시트가 naviContainer 위에 자연스럽게 올라와서 가림
-    -->
+    <!-- 네비게이션 뷰 컨테이너 -->
     <FrameLayout
         android:id="@+id/naviContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginBottom="48dp" />
+        android:layout_marginBottom="92dp" />
 
     <!-- 배송 완료 버튼 -->
     <Button
@@ -25,7 +18,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="100dp"
+        android:layout_marginBottom="120dp"
         android:text="배송 완료"
         android:visibility="gone"
         android:paddingStart="24dp"
@@ -33,7 +26,7 @@
         android:textColor="#FFFFFF"
         app:backgroundTint="@color/brand_green"/>
 
-    <!-- 바텀 시트 (운행 목록) -->
+    <!-- 바텀 시트 (배차 목록) — 최대 90%까지 올라가도록 expandedOffset 코드에서 설정 -->
     <LinearLayout
         android:id="@+id/bottomSheet"
         android:layout_width="match_parent"
@@ -53,7 +46,7 @@
             android:layout_marginBottom="6dp"
             android:background="@color/drag_handle"/>
 
-        <!-- 타이틀: 가운데 정렬 -->
+        <!-- 타이틀 -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -65,6 +58,7 @@
             android:paddingTop="4dp"
             android:paddingBottom="8dp"/>
 
+        <!-- 배차 목록 스크롤 영역 — 하단 액션 바 높이(80dp)만큼 paddingBottom 확보 -->
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="match_parent">
@@ -76,23 +70,66 @@
                 android:orientation="vertical"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
-                android:paddingBottom="100dp"/>
+                android:paddingBottom="96dp"/>
 
         </ScrollView>
 
     </LinearLayout>
 
-    <!-- 설정 FAB (바텀시트 완전 펼쳐졌을 때 오른쪽 하단) -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/btnSettings"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="20dp"
-        android:src="@drawable/ic_settings"
-        android:contentDescription="설정"
-        android:visibility="gone"
-        app:backgroundTint="@color/brand_green"
-        app:tint="#FFFFFF"/>
+    <!--
+        하단 액션 바 (시트 EXPANDED 시 표시)
+        • 왼쪽  : 설정 FAB
+        • 가운데 : "도움이 필요하신가요?" 텍스트 (누르면 HelpActivity)
+        • 오른쪽 : 채팅 FAB
+    -->
+    <LinearLayout
+        android:id="@+id/bottomActionBar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:orientation="horizontal"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="20dp"
+        android:gravity="center_vertical"
+        android:visibility="gone">
+
+        <!-- 설정 FAB -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btnSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_settings"
+            android:contentDescription="설정"
+            app:backgroundTint="@color/brand_green"
+            app:tint="#FFFFFF"
+            app:fabSize="normal"/>
+
+        <!-- 도움 텍스트 (중앙, weight=1) -->
+        <TextView
+            android:id="@+id/btnHelp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="도움이 필요하신가요?"
+            android:textSize="13sp"
+            android:textColor="@color/text_primary"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:padding="8dp"
+            android:background="?attr/selectableItemBackground"/>
+
+        <!-- 채팅 FAB -->
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btnChat"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_chat"
+            android:contentDescription="채팅 문의"
+            app:backgroundTint="@color/brand_green"
+            app:tint="#FFFFFF"
+            app:fabSize="normal"/>
+
+    </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

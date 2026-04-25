@@ -2,6 +2,8 @@ package com.example.routeon
 
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
 import android.widget.EditText
@@ -12,6 +14,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.edit
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -23,9 +26,17 @@ import java.net.URL
 
 class SettingsActivity : AppCompatActivity() {
 
+    // 현재 야간 모드 여부
+    private val isNightMode: Boolean
+        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+
+        // 시스템바 색상/아이콘 적용
+        applySystemBarsColor()
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -176,6 +187,32 @@ class SettingsActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) { }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // ThemeVibrationSettings 등에서 돌아올 때 재적용
+        applySystemBarsColor()
+    }
+
+    // configChanges="uiMode" 등록 시 테마 전환에도 코드로 시스템바 유지
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBarsColor()
+    }
+
+    /**
+     * 상태바와 네비게이션바 색상 + 아이콘 모드를
+     * 현재 Configuration 기준으로 적용.
+     */
+    private fun applySystemBarsColor() {
+        val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
+        window.statusBarColor     = barColor
+        window.navigationBarColor = barColor
+
+        val ic = WindowInsetsControllerCompat(window, window.decorView)
+        ic.isAppearanceLightStatusBars     = !isNightMode
+        ic.isAppearanceLightNavigationBars = !isNightMode
     }
 
     private fun showLogoutDialog() {

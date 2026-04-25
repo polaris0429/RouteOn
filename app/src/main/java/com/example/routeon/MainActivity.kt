@@ -132,30 +132,46 @@ class MainActivity : AppCompatActivity(),
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // ── setContentView 이후에 호출해야 decorView가 준비되어 정상 작동 ──
+        // setContentView 이후에 호출해야 decorView가 준비됨
         applySystemBarsColor()
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
+        lightSensor   = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
 
         // ── 바텀시트 설정 ──
         val bsb = BottomSheetBehavior.from(binding.bottomSheet)
         bottomSheetBehavior = bsb
         bsb.isFitToContents = false
 
+        // 최대 90% 높이: expandedOffset = 화면 높이의 10%
+        val screenHeight = resources.displayMetrics.heightPixels
+        bsb.expandedOffset = (screenHeight * 0.05).toInt()
+
         bsb.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
             override fun onStateChanged(bottomSheet: View, newState: Int) {
-                binding.btnSettings.visibility =
-                    if (newState == BottomSheetBehavior.STATE_EXPANDED) View.VISIBLE else View.GONE
+                val isExpanded = newState == BottomSheetBehavior.STATE_EXPANDED
+                binding.bottomActionBar.visibility = if (isExpanded) View.VISIBLE else View.GONE
+                applySystemBarsColor()
             }
             override fun onSlide(bottomSheet: View, slideOffset: Float) {
-                binding.btnSettings.alpha = ((slideOffset - 0.9f) / 0.1f).coerceIn(0f, 1f)
+                applySystemBarsColor()
             }
         })
 
+        // 설정 버튼 (왼쪽 FAB)
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        // 도움말 텍스트 (가운데) → HelpActivity
+        binding.btnHelp.setOnClickListener {
+            startActivity(Intent(this, HelpActivity::class.java))
+        }
+
+        // 채팅 버튼 (오른쪽 FAB) → ChatActivity
+        binding.btnChat.setOnClickListener {
+            startActivity(Intent(this, ChatActivity::class.java))
         }
 
         setupRunListUI()
@@ -163,20 +179,12 @@ class MainActivity : AppCompatActivity(),
         connectWebSocket()
     }
 
-    /**
-     * 상단 상태바(시계·배터리)와 하단 네비게이션바(홈·뒤로·멀티) 색상을
-     * 현재 Configuration의 실제 야간 모드 여부로 결정.
-     *
-     * ※ 반드시 setContentView() 이후에 호출해야 window.decorView가 준비됨.
-     */
+    // ── 다크모드: 무조건 검정 고정, 라이트모드: 흰색 ──
+    // BottomSheetBehavior 가 onSlide/onStateChanged 에서 색을 덮어쓰므로 매번 재적용
     private fun applySystemBarsColor() {
-        val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
-
+        val barColor = if (isNightMode) Color.BLACK else Color.WHITE
         window.statusBarColor     = barColor
         window.navigationBarColor = barColor
-
-        // isAppearanceLightXxx = true  → 아이콘을 어둡게(흰 배경용)
-        // isAppearanceLightXxx = false → 아이콘을 밝게(어두운 배경용)
         val ic = WindowInsetsControllerCompat(window, window.decorView)
         ic.isAppearanceLightStatusBars     = !isNightMode
         ic.isAppearanceLightNavigationBars = !isNightMode
@@ -186,9 +194,10 @@ class MainActivity : AppCompatActivity(),
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
 
-        val isDark = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val isDark = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
 
-        // 1. 네비뷰 다크모드 즉시 전환 (Configuration 기준)
+        // 1. 네비뷰 다크모드 즉시 전환
         if (::naviView.isInitialized) naviView.useDarkMode = isDark
 
         // 2. 바텀시트 UI 색상 갱신
@@ -206,7 +215,6 @@ class MainActivity : AppCompatActivity(),
     override fun onResume() {
         super.onResume()
         fetchTrips()
-        // 설정 화면에서 돌아올 때 시스템바 색상 재적용
         applySystemBarsColor()
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null) {
@@ -237,7 +245,6 @@ class MainActivity : AppCompatActivity(),
                     if (shouldBeDark) androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
                     else              androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
                 )
-                // onConfigurationChanged가 자동 호출되므로 여기서 중복 처리 불필요
             }
         }
     }
@@ -334,7 +341,9 @@ class MainActivity : AppCompatActivity(),
                     binding.btnCompleteTrip.text = "📦 배송지 수동 완료 (${nearbyStop.name})"
                     binding.btnCompleteTrip.backgroundTintList =
                         android.content.res.ColorStateList.valueOf(Color.parseColor("#0288D1"))
-                    binding.btnCompleteTrip.setOnClickListener { completeDelivery(nearbyStop.id, nearbyStop.name) }
+                    binding.btnCompleteTrip.setOnClickListener {
+                        completeDelivery(nearbyStop.id, nearbyStop.name)
+                    }
                 }
             } else {
                 binding.btnCompleteTrip.visibility = View.GONE
@@ -385,11 +394,13 @@ class MainActivity : AppCompatActivity(),
     }
 
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, wps: JSONArray) {
-        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+            .getString("access_token", null) ?: return
         Toast.makeText(this, "새 경로 계산 중...", Toast.LENGTH_LONG).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/optimize/replan").openConnection() as HttpURLConnection
+                val conn = URL("http://swc.ddns.net:8000/optimize/replan")
+                    .openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
@@ -398,7 +409,9 @@ class MainActivity : AppCompatActivity(),
                 val rem = JSONArray()
                 if (wps.length() > 0) {
                     val last = wps.getJSONObject(wps.length() - 1)
-                    dName = last.optString("name"); dLat = last.optDouble("lat"); dLon = last.optDouble("lon")
+                    dName = last.optString("name")
+                    dLat  = last.optDouble("lat")
+                    dLon  = last.optDouble("lon")
                     for (i in 0 until wps.length() - 1) rem.put(wps.getJSONObject(i))
                 }
                 OutputStreamWriter(conn.outputStream).use {
@@ -411,9 +424,13 @@ class MainActivity : AppCompatActivity(),
                     }.toString())
                 }
                 if (conn.responseCode in 200..201)
-                    parseAndStartNavi(JSONObject(conn.inputStream.bufferedReader().readText()),
-                        currentLat, currentLng, dName, dLat, dLon)
-                else withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "재경로 실패", Toast.LENGTH_SHORT).show() }
+                    parseAndStartNavi(
+                        JSONObject(conn.inputStream.bufferedReader().readText()),
+                        currentLat, currentLng, dName, dLat, dLon
+                    )
+                else withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "재경로 실패", Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) { }
         }
     }
@@ -424,11 +441,14 @@ class MainActivity : AppCompatActivity(),
     private fun setupRunListUI() { fetchTrips() }
 
     private fun fetchTrips() {
-        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+            .getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/trips").openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"; conn.setRequestProperty("Authorization", "Bearer $token")
+                val conn = URL("http://swc.ddns.net:8000/trips")
+                    .openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.connectTimeout = 5000; conn.readTimeout = 5000
                 if (conn.responseCode == 200)
                     withContext(Dispatchers.Main) {
@@ -440,7 +460,7 @@ class MainActivity : AppCompatActivity(),
 
     @SuppressLint("SetTextI18n", "MissingPermission")
     private fun renderRunList(jsonArray: JSONArray) {
-        val container = findViewById<LinearLayout>(R.id.run_list_container)
+        val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
         container.removeAllViews()
 
         val titleColor  = if (isNightMode) Color.parseColor("#E0E0E0") else Color.BLACK
@@ -458,13 +478,16 @@ class MainActivity : AppCompatActivity(),
             val tripId   = obj.optString("id", "")
             val destName = obj.optString("dest_name", obj.optString("address", "목적지 없음"))
             val lat = obj.optDouble("dest_lat", obj.optDouble("lat", 0.0))
-            val lng = obj.optDouble("dest_lon", obj.optDouble("dest_lng", obj.optDouble("lon", obj.optDouble("lng", 0.0))))
-            val status   = obj.optString("status", "대기")
+            val lng = obj.optDouble("dest_lon",
+                obj.optDouble("dest_lng", obj.optDouble("lon", obj.optDouble("lng", 0.0))))
+            val status = obj.optString("status", "대기")
 
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(40, 40, 40, 40)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT).also { it.bottomMargin = 24 }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).also { it.bottomMargin = 24 }
                 setBackgroundResource(android.R.drawable.btn_default)
             }
             itemLayout.addView(TextView(this).apply {
@@ -478,28 +501,35 @@ class MainActivity : AppCompatActivity(),
 
             val btnLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
             }
             btnLayout.addView(Button(this).apply {
                 text = "안내 시작"
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
                     currentNaviTripId = tripId
                     bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
                     fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                        if (loc != null) optimizeAndStartNavi(tripId, destName, lat, lng, loc.latitude, loc.longitude)
+                        if (loc != null)
+                            optimizeAndStartNavi(tripId, destName, lat, lng, loc.latitude, loc.longitude)
                         else startNavigationWithWGS84(destName, lat, lng)
                     }.addOnFailureListener { startNavigationWithWGS84(destName, lat, lng) }
                 }
             })
             btnLayout.addView(Button(this).apply {
                 text = "운행 취소"
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { marginStart = 20 }
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                ).apply { marginStart = 20 }
+                backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
@@ -520,30 +550,38 @@ class MainActivity : AppCompatActivity(),
         if (lat < 30.0 || lng < 120.0) return null
         return withContext(Dispatchers.IO) {
             try {
-                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
-                    .openConnection() as HttpURLConnection
+                val conn = URL(
+                    "https://dapi.kakao.com/v2/local/geo/transcoord.json" +
+                    "?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM"
+                ).openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000; conn.readTimeout = 3000
                 if (conn.responseCode == 200) {
-                    val docs = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("documents")
-                    if (docs.length() > 0) return@withContext Pair(
-                        docs.getJSONObject(0).getDouble("x").toInt(),
-                        docs.getJSONObject(0).getDouble("y").toInt()
-                    )
+                    val docs = JSONObject(conn.inputStream.bufferedReader().readText())
+                        .getJSONArray("documents")
+                    if (docs.length() > 0)
+                        return@withContext Pair(
+                            docs.getJSONObject(0).getDouble("x").toInt(),
+                            docs.getJSONObject(0).getDouble("y").toInt()
+                        )
                 }
             } catch (e: Exception) { }
             null
         }
     }
 
-    private fun optimizeAndStartNavi(tripId: String, destName: String, destLat: Double, destLng: Double,
-                                     currentLat: Double, currentLng: Double) {
-        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+    private fun optimizeAndStartNavi(
+        tripId: String, destName: String, destLat: Double, destLng: Double,
+        currentLat: Double, currentLng: Double
+    ) {
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+            .getString("access_token", null) ?: return
         Toast.makeText(this, "경로 최적화 중...", Toast.LENGTH_LONG).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/optimize").openConnection() as HttpURLConnection
+                val conn = URL("http://swc.ddns.net:8000/optimize")
+                    .openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
@@ -556,16 +594,25 @@ class MainActivity : AppCompatActivity(),
                     }.toString())
                 }
                 if (conn.responseCode in 200..201)
-                    parseAndStartNavi(JSONObject(conn.inputStream.bufferedReader().readText()),
-                        currentLat, currentLng, destName, destLat, destLng)
-                else withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
-            } catch (e: Exception) { withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) } }
+                    parseAndStartNavi(
+                        JSONObject(conn.inputStream.bufferedReader().readText()),
+                        currentLat, currentLng, destName, destLat, destLng
+                    )
+                else withContext(Dispatchers.Main) {
+                    startNavigationWithWGS84(destName, destLat, destLng)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
+            }
         }
     }
 
-    private suspend fun parseAndStartNavi(jsonResponse: JSONObject, currentLat: Double, currentLng: Double,
-                                          fallbackDestName: String, fallbackLat: Double, fallbackLng: Double) {
-        val arr = jsonResponse.optJSONArray("route") ?: jsonResponse.optJSONArray("optimized_route")
+    private suspend fun parseAndStartNavi(
+        jsonResponse: JSONObject, currentLat: Double, currentLng: Double,
+        fallbackDestName: String, fallbackLat: Double, fallbackLng: Double
+    ) {
+        val arr = jsonResponse.optJSONArray("route")
+            ?: jsonResponse.optJSONArray("optimized_route")
             ?: jsonResponse.optJSONArray("waypoints")
         if (arr != null && arr.length() > 0) {
             val vias = mutableListOf<KNPOI>()
@@ -573,12 +620,16 @@ class MainActivity : AppCompatActivity(),
             currentStops.clear()
             for (i in 0 until arr.length()) {
                 val pt   = arr.getJSONObject(i)
-                val type = pt.optString("type", ""); val name = pt.optString("name", "경유지${i+1}")
-                val lat  = pt.optDouble("lat", 0.0); val lng = pt.optDouble("lon", pt.optDouble("lng", 0.0))
+                val type = pt.optString("type", "")
+                val name = pt.optString("name", "경유지${i + 1}")
+                val lat  = pt.optDouble("lat", 0.0)
+                val lng  = pt.optDouble("lon", pt.optDouble("lng", 0.0))
                 val did  = pt.optString("delivery_id", pt.optString("id", ""))
-                if (type == "waypoint" || type == "destination") currentStops.add(RouteStop(did, name, lat, lng, type))
+                if (type == "waypoint" || type == "destination")
+                    currentStops.add(RouteStop(did, name, lat, lng, type))
                 when (type) {
-                    "waypoint", "rest_stop" -> convertWGS84ToKATEC(lat, lng)?.let { vias.add(KNPOI(name, it.first, it.second, "")) }
+                    "waypoint", "rest_stop" ->
+                        convertWGS84ToKATEC(lat, lng)?.let { vias.add(KNPOI(name, it.first, it.second, "")) }
                     "destination" -> { fName = name; fLat = lat; fLng = lng }
                 }
             }
@@ -586,14 +637,19 @@ class MainActivity : AppCompatActivity(),
             val gk = convertWGS84ToKATEC(fLat, fLng)
             if (sk != null && gk != null) {
                 val ml = KNSDK.sharedGuidance()?.locationGuide?.location
-                val sp = KNPOI("현재 위치", ml?.pos?.x?.toInt() ?: sk.first, ml?.pos?.y?.toInt() ?: sk.second, "")
+                val sp = KNPOI("현재 위치",
+                    ml?.pos?.x?.toInt() ?: sk.first, ml?.pos?.y?.toInt() ?: sk.second, "")
                 val gp = KNPOI(fName, gk.first, gk.second, "")
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, "최적화 완료! 안내를 시작합니다.", Toast.LENGTH_SHORT).show()
                     startNavigationWithWaypoints(sp, gp, vias)
                 }
-            } else withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
-        } else withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
+            } else withContext(Dispatchers.Main) {
+                startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng)
+            }
+        } else withContext(Dispatchers.Main) {
+            startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng)
+        }
     }
 
     private fun startNavigationWithWaypoints(start: KNPOI, goal: KNPOI, vias: MutableList<KNPOI>) {
@@ -609,7 +665,10 @@ class MainActivity : AppCompatActivity(),
                         naviView = KNNaviView(this@MainActivity)
                         binding.naviContainer.addView(naviView)
                         applyNaviSettings()
-                        guidance.apply { setupDelegates(this); naviView.initWithGuidance(this, aTrip, pri, avoid) }
+                        guidance.apply {
+                            setupDelegates(this)
+                            naviView.initWithGuidance(this, aTrip, pri, avoid)
+                        }
                     } else Log.e("KNSDK", "탐색 실패: ${error.msg}")
                 }
             }
@@ -621,13 +680,16 @@ class MainActivity : AppCompatActivity(),
         CoroutineScope(Dispatchers.IO).launch {
             if (lat < 30.0 || lng < 120.0) return@launch
             try {
-                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
-                    .openConnection() as HttpURLConnection
+                val conn = URL(
+                    "https://dapi.kakao.com/v2/local/geo/transcoord.json" +
+                    "?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM"
+                ).openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000; conn.readTimeout = 3000
                 if (conn.responseCode == 200) {
-                    val docs = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("documents")
+                    val docs = JSONObject(conn.inputStream.bufferedReader().readText())
+                        .getJSONArray("documents")
                     if (docs.length() > 0) {
                         val kx = docs.getJSONObject(0).getDouble("x").toInt()
                         val ky = docs.getJSONObject(0).getDouble("y").toInt()
@@ -636,9 +698,13 @@ class MainActivity : AppCompatActivity(),
                                 if (loc != null) CoroutineScope(Dispatchers.IO).launch {
                                     convertWGS84ToKATEC(loc.latitude, loc.longitude)?.let { sk ->
                                         val ml = KNSDK.sharedGuidance()?.locationGuide?.location
-                                        val sp = KNPOI("현재 위치", ml?.pos?.x?.toInt() ?: sk.first, ml?.pos?.y?.toInt() ?: sk.second, "")
+                                        val sp = KNPOI("현재 위치",
+                                            ml?.pos?.x?.toInt() ?: sk.first,
+                                            ml?.pos?.y?.toInt() ?: sk.second, "")
                                         val gp = KNPOI(name, kx, ky, "")
-                                        withContext(Dispatchers.Main) { startNavigationWithWaypoints(sp, gp, mutableListOf()) }
+                                        withContext(Dispatchers.Main) {
+                                            startNavigationWithWaypoints(sp, gp, mutableListOf())
+                                        }
                                     }
                                 }
                             }
@@ -649,22 +715,17 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    /**
-     * naviView에 설정 적용.
-     * useDarkMode는 SharedPreferences가 아닌 실제 Configuration을 기준으로 결정.
-     * → 라이트 테마 선택 시 야간 지도가 표시되는 문제 해결.
-     */
     private fun applyNaviSettings() {
         if (!::naviView.isInitialized) return
         val sp = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-
-        // ── 핵심 수정: SharedPreferences가 아닌 현재 Configuration 기준 ──
         naviView.useDarkMode = isNightMode
-
         naviView.fuelType = when (sp.getInt("fuel_type", 0)) {
-            2 -> KNCarFuel.KNCarFuel_Diesel;    3 -> KNCarFuel.KNCarFuel_LPG
-            4 -> KNCarFuel.KNCarFuel_Electric;  5 -> KNCarFuel.KNCarFuel_HybridElectric
-            6 -> KNCarFuel.KNCarFuel_PlugInHybridElectric; 7 -> KNCarFuel.KNCarFuel_Hydrogen
+            2 -> KNCarFuel.KNCarFuel_Diesel
+            3 -> KNCarFuel.KNCarFuel_LPG
+            4 -> KNCarFuel.KNCarFuel_Electric
+            5 -> KNCarFuel.KNCarFuel_HybridElectric
+            6 -> KNCarFuel.KNCarFuel_PlugInHybridElectric
+            7 -> KNCarFuel.KNCarFuel_Hydrogen
             else -> KNCarFuel.KNCarFuel_Gasoline
         }
         naviView.carType = when (sp.getInt("car_type", 0)) {
@@ -700,38 +761,49 @@ class MainActivity : AppCompatActivity(),
         val userId = sp.getString("user_id", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/location-logs").openConnection() as HttpURLConnection
+                val conn = URL("http://swc.ddns.net:8000/location-logs")
+                    .openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.connectTimeout = 3000; conn.readTimeout = 3000; conn.doOutput = true
-                val jp = JSONObject().apply { put("user_id", userId); put("lat", lat); put("lon", lng); put("speed", speed) }
+                val jp = JSONObject().apply {
+                    put("user_id", userId); put("lat", lat); put("lon", lng); put("speed", speed)
+                }
                 OutputStreamWriter(conn.outputStream).use { it.write(jp.toString()) }
-                conn.responseCode; webSocket?.send(jp.toString())
+                conn.responseCode
+                webSocket?.send(jp.toString())
             } catch (e: Exception) { }
         }
     }
 
     private fun checkLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED)
             ActivityCompat.requestPermissions(this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION),
                 locationPermissionRequestCode)
         else { initKakaoNaviSDK(); startLocationUpdates() }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == locationPermissionRequestCode && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            initKakaoNaviSDK(); startLocationUpdates()
-        } else { Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_LONG).show(); finish() }
+        if (requestCode == locationPermissionRequestCode
+            && grantResults.isNotEmpty()
+            && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) { initKakaoNaviSDK(); startLocationUpdates() }
+        else { Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_LONG).show(); finish() }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         webSocket?.cancel()
         sensorManager.unregisterListener(this)
-        if (::fusedLocationClient.isInitialized) fusedLocationClient.removeLocationUpdates(locationCallback)
+        if (::fusedLocationClient.isInitialized)
+            fusedLocationClient.removeLocationUpdates(locationCallback)
     }
 
     // =========================================================================
@@ -739,10 +811,11 @@ class MainActivity : AppCompatActivity(),
     // =========================================================================
     private fun initKakaoNaviSDK() {
         KNSDK.initializeWithAppKey(
-            aAppKey = "b57bc6d46e97f480deecdd3a8e4cd754",
-            aClientVersion = "1.0", aAppUserId = "test_user",
-            aLangType = KNLanguageType.KNLanguageType_KOREAN,
-            aCompletion = { error ->
+            aAppKey       = "b57bc6d46e97f480deecdd3a8e4cd754",
+            aClientVersion = "1.0",
+            aAppUserId    = "test_user",
+            aLangType     = KNLanguageType.KNLanguageType_KOREAN,
+            aCompletion   = { error ->
                 if (error == null) runOnUiThread {
                     naviView = KNNaviView(this@MainActivity)
                     binding.naviContainer.addView(naviView)
@@ -763,7 +836,8 @@ class MainActivity : AppCompatActivity(),
     private fun startSafeDriving() {
         KNSDK.sharedGuidance()?.apply {
             setupDelegates(this)
-            naviView.initWithGuidance(this, null, KNRoutePriority.KNRoutePriority_Recommand,
+            naviView.initWithGuidance(this, null,
+                KNRoutePriority.KNRoutePriority_Recommand,
                 KNRouteAvoidOption.KNRouteAvoidOption_None.value)
         }
     }
@@ -785,20 +859,42 @@ class MainActivity : AppCompatActivity(),
         vibrate(150)
     }
 
-    override fun guidanceGuideStarted(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceGuideStarted(aGuidance) }
-    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceCheckingRouteChange(aGuidance) }
-    override fun guidanceRouteUnchanged(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceRouteUnchanged(aGuidance) }
-    override fun guidanceRouteUnchangedWithError(aGuidnace: KNGuidance, aError: KNError) { if (::naviView.isInitialized) naviView.guidanceRouteUnchangedWithError(aGuidnace, aError) }
-    override fun guidanceOutOfRoute(aGuidance: KNGuidance) { if (::naviView.isInitialized) naviView.guidanceOutOfRoute(aGuidance) }
-    override fun guidanceRouteChanged(aGuidance: KNGuidance, f: KNRoute, fl: KNLocation, t: KNRoute, tl: KNLocation, r: KNGuideRouteChangeReason) {}
-    override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo) }
+    override fun guidanceGuideStarted(aGuidance: KNGuidance) {
+        if (::naviView.isInitialized) naviView.guidanceGuideStarted(aGuidance) }
+    override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) {
+        if (::naviView.isInitialized) naviView.guidanceCheckingRouteChange(aGuidance) }
+    override fun guidanceRouteUnchanged(aGuidance: KNGuidance) {
+        if (::naviView.isInitialized) naviView.guidanceRouteUnchanged(aGuidance) }
+    override fun guidanceRouteUnchangedWithError(aGuidnace: KNGuidance, aError: KNError) {
+        if (::naviView.isInitialized) naviView.guidanceRouteUnchangedWithError(aGuidnace, aError) }
+    override fun guidanceOutOfRoute(aGuidance: KNGuidance) {
+        if (::naviView.isInitialized) naviView.guidanceOutOfRoute(aGuidance) }
+    override fun guidanceRouteChanged(
+        aGuidance: KNGuidance, f: KNRoute, fl: KNLocation,
+        t: KNRoute, tl: KNLocation, r: KNGuideRouteChangeReason) {}
+    override fun guidanceDidUpdateRoutes(
+        aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) {
+        if (::naviView.isInitialized) naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo) }
     override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {}
-    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) { if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide) }
-    override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide) }
-    override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide) }
-    override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<KNSafety>?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties) }
-    override fun shouldPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice, aNewData: MutableList<ByteArray>): Boolean =
-        if (::naviView.isInitialized) naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
-    override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) { if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
-    override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) { if (::naviView.isInitialized) naviView.didUpdateCitsGuide(aGuidance, aCitsGuide) }
+    override fun guidanceDidUpdateLocation(
+        aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) {
+        if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide) }
+    override fun guidanceDidUpdateRouteGuide(
+        aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) {
+        if (::naviView.isInitialized) naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide) }
+    override fun guidanceDidUpdateSafetyGuide(
+        aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) {
+        if (::naviView.isInitialized) naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide) }
+    override fun guidanceDidUpdateAroundSafeties(
+        aGuidance: KNGuidance, aSafeties: List<KNSafety>?) {
+        if (::naviView.isInitialized) naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties) }
+    override fun shouldPlayVoiceGuide(
+        aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice,
+        aNewData: MutableList<ByteArray>): Boolean =
+        if (::naviView.isInitialized)
+            naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
+    override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
+        if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
+    override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) {
+        if (::naviView.isInitialized) naviView.didUpdateCitsGuide(aGuidance, aCitsGuide) }
 }

@@ -46,11 +46,15 @@
             android:exported="false"
             android:screenOrientation="portrait"/>
 
-        <activity android:name=".SettingsActivity"               android:exported="false"/>
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"/>
         <activity android:name=".NotificationSettingsActivity"   android:exported="false"/>
         <activity android:name=".ThemeVibrationSettingsActivity" android:exported="false"/>
         <activity android:name=".VehicleSettingsActivity"        android:exported="false"/>
         <activity android:name=".LanguageSettingsActivity"       android:exported="false"/>
+        <activity android:name=".HelpActivity"                    android:exported="false"/>
+        <activity android:name=".ChatActivity"                    android:exported="false"/>
 
     </application>
 </manifest>

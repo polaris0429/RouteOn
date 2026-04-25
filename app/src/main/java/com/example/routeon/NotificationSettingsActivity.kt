@@ -1,18 +1,26 @@
 package com.example.routeon
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.WindowInsetsControllerCompat
 
 class NotificationSettingsActivity : AppCompatActivity() {
+
+    private val isNightMode: Boolean
+        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_notification_settings)
+        applySystemBarsColor()
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -63,5 +71,24 @@ class NotificationSettingsActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applySystemBarsColor()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBarsColor()
+    }
+
+    private fun applySystemBarsColor() {
+        val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
+        window.statusBarColor     = barColor
+        window.navigationBarColor = barColor
+        val ic = WindowInsetsControllerCompat(window, window.decorView)
+        ic.isAppearanceLightStatusBars     = !isNightMode
+        ic.isAppearanceLightNavigationBars = !isNightMode
     }
 }

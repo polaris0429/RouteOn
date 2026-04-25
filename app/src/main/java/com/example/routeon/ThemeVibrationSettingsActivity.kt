@@ -1,6 +1,8 @@
 package com.example.routeon
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -15,8 +17,14 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.WindowInsetsControllerCompat
 
 class ThemeVibrationSettingsActivity : AppCompatActivity(), SensorEventListener {
+
+    // 현재 야간 모드 여부
+    private val isNightMode: Boolean
+        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
 
     // 조도 센서
     private lateinit var sensorManager: SensorManager
@@ -36,6 +44,9 @@ class ThemeVibrationSettingsActivity : AppCompatActivity(), SensorEventListener 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_theme_vibration_settings)
+
+        // 시스템바 색상/아이콘 적용
+        applySystemBarsColor()
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -214,13 +225,29 @@ class ThemeVibrationSettingsActivity : AppCompatActivity(), SensorEventListener 
 
     override fun onResume() {
         super.onResume()
+        applySystemBarsColor()
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null) {
             startLightSensor()
         }
     }
 
-    // ── 수동 모드 버튼 활성/비활성 ──
+    // 수동 모드 버튼 활성/비활성
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBarsColor()
+    }
+
+    private fun applySystemBarsColor() {
+        val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
+        window.statusBarColor     = barColor
+        window.navigationBarColor = barColor
+        val ic = WindowInsetsControllerCompat(window, window.decorView)
+        ic.isAppearanceLightStatusBars     = !isNightMode
+        ic.isAppearanceLightNavigationBars = !isNightMode
+    }
+
     private fun setManualModeEnabled(enabled: Boolean, dayView: LinearLayout, nightView: LinearLayout) {
         dayView.alpha       = if (enabled) 1.0f else 0.4f
         nightView.alpha     = if (enabled) 1.0f else 0.4f

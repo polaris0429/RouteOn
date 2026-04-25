@@ -1,11 +1,14 @@
 package com.example.routeon
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.WindowInsetsControllerCompat
 
 /**
  * 차량 설정 화면
@@ -13,6 +16,10 @@ import androidx.appcompat.widget.Toolbar
  * car_type   저장값: 0=1종소형, 1=2종중형, 2=3종대형, 3=4종대형화물, 4=5종특수화물, 5=6종경차, 6=이륜차
  */
 class VehicleSettingsActivity : AppCompatActivity() {
+
+    private val isNightMode: Boolean
+        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
 
     private val carTypeItems by lazy {
         listOf(
@@ -42,6 +49,7 @@ class VehicleSettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_vehicle_settings)
+        applySystemBarsColor()
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -76,5 +84,24 @@ class VehicleSettingsActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applySystemBarsColor()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBarsColor()
+    }
+
+    private fun applySystemBarsColor() {
+        val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
+        window.statusBarColor     = barColor
+        window.navigationBarColor = barColor
+        val ic = WindowInsetsControllerCompat(window, window.decorView)
+        ic.isAppearanceLightStatusBars     = !isNightMode
+        ic.isAppearanceLightNavigationBars = !isNightMode
     }
 }
