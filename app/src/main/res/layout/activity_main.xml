@@ -85,7 +85,7 @@
     <LinearLayout
         android:id="@+id/bottomActionBar"
         android:layout_width="match_parent"
-        android:layout_height="64dp"
+        android:layout_height="120dp"
         android:orientation="horizontal"
         android:layout_gravity="bottom"
         android:layout_marginStart="16dp"
