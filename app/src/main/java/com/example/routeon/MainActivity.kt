@@ -208,6 +208,10 @@ class MainActivity : AppCompatActivity(),
         binding.bottomSheet.getChildAt(0)?.setBackgroundColor(handleColor)
         binding.bottomSheet.getChildAt(1)?.let { if (it is TextView) it.setTextColor(textColor) }
 
+        // 3. "도움이 필요하신가요?" 텍스트: configChanges=uiMode 환경에서는
+        //    Activity 재생성이 없으므로 XML 리소스 색상이 자동 갱신되지 않음 → 수동 업데이트
+        binding.btnHelp.setTextColor(textColor)
+
         // 3. 시스템바 색상/아이콘 갱신
         applySystemBarsColor()
     }
@@ -220,6 +224,15 @@ class MainActivity : AppCompatActivity(),
         if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null) {
             sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
+    }
+
+    // ThemeVibrationSettingsActivity 에서 수동으로 테마를 바꾸고 돌아올 때
+    // Android 시스템이 window decoration 을 테마 기본값으로 덮어쓴 뒤 포커스가 옵니다.
+    // onResume 보다 늦게 호출되는 onWindowFocusChanged 에서 마지막으로 재적용해야
+    // 네비게이션 바 색상이 흰색으로 남는 현상을 막을 수 있습니다.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applySystemBarsColor()
     }
 
     override fun onPause() {
