@@ -54,7 +54,7 @@ class HelpActivity : AppCompatActivity() {
         ic.isAppearanceLightNavigationBars = !isNightMode
     }
 
-    // ── 배차 취소 사유 선택  ──
+    // ── 배차 취소 사유 선택 ──
     private fun showCancelReasonDialog() {
         val reasons = arrayOf("차량 고장", "건강상 문제", "사고 발생", "기타 (사유 직접 입력)")
         AlertDialog.Builder(this)
