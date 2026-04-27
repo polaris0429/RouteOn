@@ -288,7 +288,7 @@ class MainActivity : AppCompatActivity(),
             .getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/trips/$tripId/status?status=$status")
+                val conn = URL("${Constants.BASE_URL}/trips/$tripId/status?status=$status")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "PATCH"
                 conn.setRequestProperty("Authorization", "Bearer $token")
@@ -318,7 +318,7 @@ class MainActivity : AppCompatActivity(),
             .getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/deliveries/$deliveryId/complete")
+                val conn = URL("${Constants.BASE_URL}/deliveries/$deliveryId/complete")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "PATCH"
                 conn.setRequestProperty("Authorization", "Bearer $token")
@@ -371,7 +371,7 @@ class MainActivity : AppCompatActivity(),
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
         val request = Request.Builder()
-            .url("ws://swc.ddns.net:8000/ws/location")
+            .url("${Constants.WS_URL}/ws/location")
             .addHeader("Authorization", "Bearer $token").build()
         webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) { Log.d("WS", "연결") }
@@ -412,7 +412,7 @@ class MainActivity : AppCompatActivity(),
         Toast.makeText(this, "새 경로 계산 중...", Toast.LENGTH_LONG).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/optimize/replan")
+                val conn = URL("${Constants.BASE_URL}/optimize/replan")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -458,7 +458,7 @@ class MainActivity : AppCompatActivity(),
             .getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/trips")
+                val conn = URL("${Constants.BASE_URL}/trips")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "Bearer $token")
@@ -593,7 +593,7 @@ class MainActivity : AppCompatActivity(),
         Toast.makeText(this, "경로 최적화 중...", Toast.LENGTH_LONG).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/optimize")
+                val conn = URL("${Constants.BASE_URL}/optimize")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -774,7 +774,7 @@ class MainActivity : AppCompatActivity(),
         val userId = sp.getString("user_id", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("http://swc.ddns.net:8000/location-logs")
+                val conn = URL("${Constants.BASE_URL}/location-logs")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")

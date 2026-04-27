@@ -136,7 +136,7 @@ class RegisterActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val url = URL("http://swc.ddns.net:8000/organizations/lookup?org_code=$orgCode")
+                    val url = URL("${Constants.BASE_URL}/organizations/lookup?org_code=$orgCode")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.connectTimeout = 5000
@@ -191,7 +191,7 @@ class RegisterActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val url = URL("http://swc.ddns.net:8000/auth/check-username?username=$inputId")
+                    val url = URL("${Constants.BASE_URL}/auth/check-username?username=$inputId")
                     val conn = url.openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.connectTimeout = 5000
@@ -346,7 +346,7 @@ class RegisterActivity : AppCompatActivity() {
     private fun registerUserOnServer(usernameStr: String, passwordStr: String, phoneStr: String, orgCodeStr: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val url = URL("http://swc.ddns.net:8000/auth/register")
+                val url = URL("${Constants.BASE_URL}/auth/register")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")

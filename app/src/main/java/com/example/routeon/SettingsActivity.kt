@@ -175,7 +175,7 @@ class SettingsActivity : AppCompatActivity() {
             .getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val url = URL("http://swc.ddns.net:8000/auth/me")
+                val url = URL("${Constants.BASE_URL}/auth/me")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "PATCH"
                 conn.setRequestProperty("Content-Type", "application/json")

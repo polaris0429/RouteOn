@@ -57,7 +57,7 @@ class LoginActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val loginUrl = URL("http://swc.ddns.net:8000/auth/login")
+                    val loginUrl = URL("${Constants.BASE_URL}/auth/login")
                     val loginConn = loginUrl.openConnection() as HttpURLConnection
                     loginConn.requestMethod = "POST"
                     loginConn.setRequestProperty("Content-Type", "application/json")
@@ -74,7 +74,7 @@ class LoginActivity : AppCompatActivity() {
                         val accessToken = JSONObject(response).getString("access_token")
 
                         // 2. 내 정보 조회 API 호출
-                        val meUrl = URL("http://swc.ddns.net:8000/auth/me")
+                        val meUrl = URL("${Constants.BASE_URL}/auth/me")
                         val meConn = meUrl.openConnection() as HttpURLConnection
                         meConn.requestMethod = "GET"
                         meConn.setRequestProperty("Authorization", "Bearer $accessToken")
