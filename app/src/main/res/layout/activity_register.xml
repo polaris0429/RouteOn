@@ -7,7 +7,7 @@
     android:orientation="vertical"
     android:paddingHorizontal="30dp"
     android:paddingTop="50dp"
-    android:paddingBottom="30dp"
+    android:paddingBottom="20dp"
     android:gravity="center_horizontal"
     android:background="#FFFFFF"
     tools:ignore="HardcodedText">
@@ -20,10 +20,11 @@
         android:src="@drawable/routeon_logo"
         android:contentDescription="앱 로고" />
 
+    <!-- Step 1 -->
     <LinearLayout
         android:id="@+id/layout_step1"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="vertical"
         android:visibility="visible">
 
@@ -63,10 +64,16 @@
                 android:textSize="18sp" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
         <Button
             android:id="@+id/btn_next_step1"
             android:layout_width="match_parent"
             android:layout_height="60dp"
+            android:layout_marginBottom="30dp"
             android:backgroundTint="#FEE500"
             android:text="다음"
             android:textColor="#333333"
@@ -75,10 +82,11 @@
             app:cornerRadius="12dp" />
     </LinearLayout>
 
+    <!-- Step 2 -->
     <LinearLayout
         android:id="@+id/layout_step2"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="vertical"
         android:visibility="gone">
 
@@ -195,7 +203,6 @@
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="25dp"
             android:hint="비밀번호 확인"
             android:textColorHint="#444444"
             app:boxBackgroundColor="@android:color/transparent"
@@ -220,10 +227,16 @@
                 android:textSize="18sp" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
         <Button
             android:id="@+id/btn_next_step2"
             android:layout_width="match_parent"
             android:layout_height="60dp"
+            android:layout_marginBottom="30dp"
             android:backgroundTint="#FEE500"
             android:text="다음"
             android:textColor="#333333"
@@ -232,10 +245,159 @@
             app:cornerRadius="12dp" />
     </LinearLayout>
 
+    <!-- Step Terms (약관 동의) -->
+    <LinearLayout
+        android:id="@+id/layout_step_terms"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="15dp"
+            android:text="서비스 이용을 위해\n약관에 동의해주세요."
+            android:textAlignment="center"
+            android:textColor="#000000"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <ScrollView
+            android:id="@+id/sv_terms_main"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="2dp">
+
+                <!-- 1. 위치정보 (필수) -->
+                <androidx.core.widget.NestedScrollView
+                    android:id="@+id/sv_terms_location"
+                    android:layout_width="match_parent"
+                    android:layout_height="220dp"
+                    android:background="#F5F5F5"
+                    android:padding="12dp"
+                    android:layout_marginBottom="8dp"
+                    android:scrollbars="vertical">
+                    <TextView
+                        android:id="@+id/tv_terms_location"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="#666666"
+                        android:textSize="12sp"
+                        android:lineSpacingExtra="4dp"/>
+                </androidx.core.widget.NestedScrollView>
+
+                <CheckBox
+                    android:id="@+id/cb_agree_location"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="24dp"
+                    android:enabled="false"
+                    android:textColor="#333333"
+                    android:text="위치정보서비스 이용동의 (필수)" />
+
+                <!-- 2. 개인정보 (필수) -->
+                <androidx.core.widget.NestedScrollView
+                    android:id="@+id/sv_terms_privacy"
+                    android:layout_width="match_parent"
+                    android:layout_height="220dp"
+                    android:background="#F5F5F5"
+                    android:padding="12dp"
+                    android:layout_marginBottom="8dp"
+                    android:scrollbars="vertical">
+                    <TextView
+                        android:id="@+id/tv_terms_privacy"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="#666666"
+                        android:textSize="12sp"
+                        android:lineSpacingExtra="4dp"/>
+                </androidx.core.widget.NestedScrollView>
+
+                <CheckBox
+                    android:id="@+id/cb_agree_privacy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="24dp"
+                    android:enabled="false"
+                    android:textColor="#333333"
+                    android:text="개인정보 수집·이용 동의 (필수)" />
+
+                <!-- 3. 마케팅 (선택) -->
+                <androidx.core.widget.NestedScrollView
+                    android:id="@+id/sv_terms_marketing"
+                    android:layout_width="match_parent"
+                    android:layout_height="220dp"
+                    android:background="#F5F5F5"
+                    android:padding="12dp"
+                    android:layout_marginBottom="8dp"
+                    android:scrollbars="vertical">
+                    <TextView
+                        android:id="@+id/tv_terms_marketing"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textColor="#666666"
+                        android:textSize="12sp"
+                        android:lineSpacingExtra="4dp"/>
+                </androidx.core.widget.NestedScrollView>
+
+                <CheckBox
+                    android:id="@+id/cb_agree_marketing"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:enabled="false"
+                    android:textColor="#333333"
+                    android:text="마케팅 정보 수신 동의 (선택)" />
+
+            </LinearLayout>
+        </ScrollView>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="12dp"
+            android:background="#E0E0E0" />
+
+        <!-- 4. 약관 모두 동의 (다음 버튼 바로 위) -->
+        <CheckBox
+            android:id="@+id/cb_agree_all"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:enabled="false"
+            android:text="약관 모두 동의"
+            android:textColor="#000000"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_next_step_terms"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:layout_marginBottom="30dp"
+            android:backgroundTint="#CCCCCC"
+            android:enabled="false"
+            android:text="다음"
+            android:textColor="#333333"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            app:cornerRadius="12dp" />
+    </LinearLayout>
+
+    <!-- Step 3 -->
     <LinearLayout
         android:id="@+id/layout_step3"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="vertical"
         android:visibility="gone">
 
@@ -316,10 +478,16 @@
                 <EditText android:id="@+id/otp6" android:layout_width="40dp" android:layout_height="50dp" android:gravity="center" android:inputType="number" android:maxLength="1" android:layout_margin="2dp"/>
             </LinearLayout>
 
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
             <Button
                 android:id="@+id/btn_verify_sms"
                 android:layout_width="match_parent"
                 android:layout_height="60dp"
+                android:layout_marginBottom="30dp"
                 android:backgroundTint="#03C75A"
                 android:text="인증 및 가입완료"
                 android:textColor="#FFFFFF"
@@ -329,10 +497,11 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Step 4 -->
     <LinearLayout
         android:id="@+id/layout_step4"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
         android:visibility="gone">
@@ -351,6 +520,7 @@
             android:id="@+id/btn_go_to_login"
             android:layout_width="match_parent"
             android:layout_height="60dp"
+            android:layout_marginBottom="30dp"
             android:backgroundTint="#333333"
             android:text="로그인하러 가기"
             android:textColor="#FFFFFF"
