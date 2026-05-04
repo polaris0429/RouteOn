@@ -11,6 +11,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -115,9 +116,43 @@ class MainActivity : AppCompatActivity(),
     // BottomSheet
     private var bottomSheetBehavior: BottomSheetBehavior<LinearLayout>? = null
 
+    // =========================================================================
+    // 자동 새로고침 — 5초 주기, 다른 Activity에 있거나 시트가 닫혀 있어도 계속 동작
+    // =========================================================================
+    private val refreshHandler = Handler(Looper.getMainLooper())
+    private val refreshRunnable = object : Runnable {
+        override fun run() {
+            fetchTrips()
+            refreshHandler.postDelayed(this, 5_000)
+        }
+    }
+
+    // 배차 상태 추적 (신규·취소·완료 감지용)
+    // key = trip_id, value = status
+    private val knownTripStatuses = mutableMapOf<String, String>()
+    private var isFirstFetch = true          // 앱 시작 첫 로드는 알림 없음
+
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
+
+    // =========================================================================
+    // 알림음 순차 재생: first(bell) → second(trip_xxx)
+    // =========================================================================
+    private fun playSequential(firstRes: Int, secondRes: Int) {
+        try {
+            val mp1 = MediaPlayer.create(this, firstRes) ?: return
+            mp1.setOnCompletionListener { first ->
+                first.release()
+                try {
+                    val mp2 = MediaPlayer.create(this@MainActivity, secondRes) ?: return@setOnCompletionListener
+                    mp2.setOnCompletionListener { it.release() }
+                    mp2.start()
+                } catch (_: Exception) { }
+            }
+            mp1.start()
+        } catch (_: Exception) { }
+    }
 
     // =========================================================================
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -164,9 +199,11 @@ class MainActivity : AppCompatActivity(),
             startActivity(Intent(this, ChatActivity::class.java))
         }
 
-        setupRunListUI()
         checkLocationPermission()
         connectWebSocket()
+
+        // 5초 자동 새로고침 시작 (앱 종료 전까지 계속 동작)
+        refreshHandler.post(refreshRunnable)
     }
 
     private fun applySystemBarsColor() {
@@ -199,6 +236,7 @@ class MainActivity : AppCompatActivity(),
 
     override fun onResume() {
         super.onResume()
+        // 화면 복귀 시 즉시 한 번 갱신 (자동 주기와는 별개)
         fetchTrips()
         applySystemBarsColor()
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
@@ -215,6 +253,7 @@ class MainActivity : AppCompatActivity(),
     override fun onPause() {
         super.onPause()
         sensorManager.unregisterListener(this)
+        // refreshHandler는 여기서 멈추지 않음 → 다른 Activity에 있어도 계속 새로고침
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -436,10 +475,8 @@ class MainActivity : AppCompatActivity(),
     }
 
     // =========================================================================
-    // 운행 목록
+    // 운행 목록 — 5초 자동 새로고침 + 상태 변화 감지 알림
     // =========================================================================
-    private fun setupRunListUI() { fetchTrips() }
-
     private fun fetchTrips() {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
@@ -450,12 +487,64 @@ class MainActivity : AppCompatActivity(),
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.connectTimeout = 5000; conn.readTimeout = 5000
-                if (conn.responseCode == 200)
-                    withContext(Dispatchers.Main) {
-                        renderRunList(JSONArray(conn.inputStream.bufferedReader().readText()))
-                    }
+                if (conn.responseCode == 200) {
+                    val jsonArray = JSONArray(conn.inputStream.bufferedReader().readText())
+                    withContext(Dispatchers.Main) { processTripsUpdate(jsonArray) }
+                }
             } catch (e: Exception) { }
         }
+    }
+
+    /**
+     * API 응답을 받아 이전 상태와 비교 후 알림음 재생, 목록 갱신
+     */
+    private fun processTripsUpdate(jsonArray: JSONArray) {
+        // 현재 응답 전체를 맵으로 변환
+        val newStatuses = mutableMapOf<String, String>()
+        for (i in 0 until jsonArray.length()) {
+            val obj    = jsonArray.getJSONObject(i)
+            val id     = obj.optString("id", "")
+            val status = obj.optString("status", "")
+            if (id.isNotEmpty()) newStatuses[id] = status
+        }
+
+        if (!isFirstFetch) {
+            // ① 새 배차 추가: 이전에 없던 trip 중 active 상태인 것
+            for ((id, status) in newStatuses) {
+                if (id !in knownTripStatuses &&
+                    status in listOf("scheduled", "in_progress")) {
+                    playSequential(R.raw.bell, R.raw.trip_new)
+                    vibrate(200)
+                    break   // 한 번만 재생 (여러 개 동시 추가돼도)
+                }
+            }
+
+            // ② 배차 취소 감지
+            for ((id, oldStatus) in knownTripStatuses) {
+                val newStatus = newStatuses[id]
+                if (oldStatus !in listOf("cancelled", "completed") &&
+                    newStatus == "cancelled") {
+                    playSequential(R.raw.bell, R.raw.trip_cancel)
+                    vibrate(200)
+                }
+            }
+
+            // ③ 운행 완료 감지
+            for ((id, oldStatus) in knownTripStatuses) {
+                val newStatus = newStatuses[id]
+                if (oldStatus !in listOf("cancelled", "completed") &&
+                    newStatus == "completed") {
+                    playSequential(R.raw.bell, R.raw.trip_complite)
+                    vibrate(200)
+                }
+            }
+        }
+
+        knownTripStatuses.clear()
+        knownTripStatuses.putAll(newStatuses)
+        isFirstFetch = false
+
+        renderRunList(jsonArray)
     }
 
     @SuppressLint("SetTextI18n", "MissingPermission")
@@ -466,15 +555,24 @@ class MainActivity : AppCompatActivity(),
         val titleColor  = if (isNightMode) Color.parseColor("#E0E0E0") else Color.BLACK
         val statusColor = if (isNightMode) Color.parseColor("#AAAAAA") else Color.DKGRAY
 
-        if (jsonArray.length() == 0) {
+        // cancelled / completed 제외 후 표시할 항목만 필터
+        val activeItems = mutableListOf<JSONObject>()
+        for (i in 0 until jsonArray.length()) {
+            val obj    = jsonArray.getJSONObject(i)
+            val status = obj.optString("status", "")
+            if (status != "cancelled" && status != "completed") {
+                activeItems.add(obj)
+            }
+        }
+
+        if (activeItems.isEmpty()) {
             container.addView(TextView(this).apply {
                 text = getString(R.string.navi_no_trips)
                 setPadding(20, 20, 20, 20); textSize = 16f; setTextColor(titleColor)
             }); return
         }
 
-        for (i in 0 until jsonArray.length()) {
-            val obj      = jsonArray.getJSONObject(i)
+        activeItems.forEachIndexed { index, obj ->
             val tripId   = obj.optString("id", "")
             val destName = obj.optString("dest_name", obj.optString("address", "목적지 없음"))
             val lat = obj.optDouble("dest_lat", obj.optDouble("lat", 0.0))
@@ -491,7 +589,7 @@ class MainActivity : AppCompatActivity(),
                 setBackgroundResource(android.R.drawable.btn_default)
             }
             itemLayout.addView(TextView(this).apply {
-                text = "${i + 1}. $destName"; textSize = 16f
+                text = "${index + 1}. $destName"; textSize = 16f
                 setTypeface(null, android.graphics.Typeface.BOLD); setTextColor(titleColor)
             })
             itemLayout.addView(TextView(this).apply {
@@ -805,6 +903,8 @@ class MainActivity : AppCompatActivity(),
 
     override fun onDestroy() {
         super.onDestroy()
+        // 자동 새로고침 중단
+        refreshHandler.removeCallbacks(refreshRunnable)
         webSocket?.cancel()
         sensorManager.unregisterListener(this)
         if (::fusedLocationClient.isInitialized)
@@ -815,7 +915,6 @@ class MainActivity : AppCompatActivity(),
     // 카카오 SDK
     // =========================================================================
     private fun initKakaoNaviSDK() {
-        // 저장된 언어 코드 → KNLanguageType 변환
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val langCode = prefs.getString("language", "ko") ?: "ko"
         val knLang = when (langCode) {
