@@ -1,3 +1,76 @@
 <resources>
     <string name="app_name">RouteOn</string>
+
+    <!-- SettingsActivity -->
+    <string name="settings_title">설정</string>
+    <string name="settings_profile_subtitle">내 정보 · 주소 관리</string>
+    <string name="settings_menu_language">언어</string>
+    <string name="settings_menu_notification">알림</string>
+    <string name="settings_menu_theme_vibration">화면 테마 · 진동</string>
+    <string name="settings_menu_vehicle">차량 설정</string>
+    <string name="settings_menu_logout">로그아웃</string>
+    <string name="settings_logout_title">로그아웃</string>
+    <string name="settings_logout_message">정말 로그아웃 하시겠습니까?</string>
+    <string name="settings_logout_confirm">로그아웃</string>
+    <string name="settings_cancel">취소</string>
+    <string name="settings_edit_info_title">내 정보 변경</string>
+    <string name="settings_edit_phone">휴대폰 번호 변경</string>
+    <string name="settings_edit_password">비밀번호 변경</string>
+    <string name="settings_edit_phone_hint">새 휴대폰 번호 (예: 010-1234-5678)</string>
+    <string name="settings_edit_phone_title">휴대폰 번호 변경</string>
+    <string name="settings_edit_password_title">비밀번호 변경</string>
+    <string name="settings_edit_password_current">현재 비밀번호</string>
+    <string name="settings_edit_password_new">새 비밀번호</string>
+    <string name="settings_edit_password_confirm">새 비밀번호 확인</string>
+    <string name="settings_edit_password_mismatch">새 비밀번호 불일치</string>
+    <string name="settings_edit_change">변경하기</string>
+    <string name="settings_edit_success">변경 완료!</string>
+
+    <!-- LanguageSettingsActivity -->
+    <string name="language_settings_title">언어</string>
+    <string name="language_section_label">앱 언어</string>
+    <string name="language_changed_toast">언어가 변경되었습니다.</string>
+
+    <!-- 언어 표시 이름 -->
+    <string name="lang_korean">한국어</string>
+    <string name="lang_english">English</string>
+    <string name="lang_japanese">日本語</string>
+    <string name="lang_chinese">中文 (简体)</string>
+
+    <!-- MainActivity — 메인 화면 UI -->
+    <string name="main_trip_list_title">배차 목록</string>
+    <string name="main_help_text">도움이 필요하신가요?</string>
+    <string name="main_settings_desc">설정</string>
+    <string name="main_chat_desc">채팅 문의</string>
+
+    <!-- MainActivity — 내비/운행 -->
+    <string name="navi_no_trips">현재 배정된 배차(Trip)가 없습니다.</string>
+    <string name="navi_optimizing">경로 최적화 중…</string>
+    <string name="navi_optimized">최적화 완료! 안내를 시작합니다.</string>
+    <string name="navi_optimize_fail">재경로 실패</string>
+    <string name="navi_ended">안내가 종료되었습니다.</string>
+    <string name="navi_replanning">새 경로 계산 중…</string>
+    <string name="navi_replan_title">🚨 경로 변경</string>
+    <string name="navi_replan_confirm">재안내 시작</string>
+    <string name="navi_trip_completed">운행이 완료되었습니다.</string>
+    <string name="navi_trip_cancelled">운행이 취소되었습니다.</string>
+    <string name="navi_delivery_done">배송 자동 완료!</string>
+    <string name="navi_cancel_confirm_title">운행 취소</string>
+    <string name="navi_cancel_confirm_message">정말 취소하시겠습니까?</string>
+    <string name="navi_btn_start">안내 시작</string>
+    <string name="navi_btn_cancel_trip">운행 취소</string>
+    <string name="navi_btn_complete_dest">🏁 운행 전체 완료 (목적지 도착)</string>
+    <string name="navi_btn_complete_delivery">📦 배송지 수동 완료</string>
+    <string name="navi_location_permission">위치 권한이 필요합니다.</string>
+    <string name="navi_yes">예</string>
+    <string name="navi_no">아니오</string>
+    <string name="navi_status_label">상태</string>
+    <string name="navi_no_delivery_id">배송지 ID가 없습니다.</string>
+
+    <!-- ChatActivity -->
+    <string name="chat_title">채팅 문의</string>
+    <string name="chat_input_hint">메시지를 입력하세요</string>
+    <string name="chat_send_desc">전송</string>
+    <string name="chat_welcome">안녕하세요! 고객센터입니다. 무엇을 도와드릴까요? 😊</string>
+    <string name="chat_auto_reply">감사합니다. 담당자가 곧 연결됩니다. 잠시만 기다려 주세요.</string>
 </resources>

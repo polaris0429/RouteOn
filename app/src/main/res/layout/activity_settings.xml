@@ -15,7 +15,7 @@
         android:background="@color/toolbar_bg"
         android:elevation="2dp"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:navigationContentDescription="뒤로가기"/>
+        app:navigationContentDescription="@string/settings_cancel"/>
 
     <ScrollView
         android:layout_width="match_parent"
@@ -49,7 +49,7 @@
                     <FrameLayout android:layout_width="48dp" android:layout_height="48dp">
                         <ImageView android:layout_width="48dp" android:layout_height="48dp"
                             android:src="@drawable/ic_profile_placeholder"
-                            android:contentDescription="프로필"/>
+                            android:contentDescription="@string/settings_title"/>
                     </FrameLayout>
 
                     <LinearLayout
@@ -63,7 +63,7 @@
                             android:id="@+id/tvUserName"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="사용자"
+                            android:text="@string/settings_title"
                             android:textSize="17sp"
                             android:textStyle="bold"
                             android:textColor="@color/text_primary"/>
@@ -71,7 +71,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="내 정보 · 주소 관리"
+                            android:text="@string/settings_profile_subtitle"
                             android:textSize="13sp"
                             android:textColor="@color/text_secondary"
                             android:layout_marginTop="2dp"/>
@@ -114,11 +114,11 @@
                         android:clickable="true"
                         android:focusable="true">
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                            android:layout_weight="1" android:text="언어"
+                            android:layout_weight="1" android:text="@string/settings_menu_language"
                             android:textSize="15sp" android:textColor="@color/text_primary"/>
                         <TextView android:id="@+id/tvLanguageValue"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:text="한국어" android:textSize="14sp"
+                            android:textSize="14sp"
                             android:textColor="@color/brand_green_light" android:layout_marginEnd="6dp"/>
                         <ImageView android:layout_width="16dp" android:layout_height="16dp"
                             android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
@@ -140,7 +140,7 @@
                         android:clickable="true"
                         android:focusable="true">
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                            android:layout_weight="1" android:text="알림"
+                            android:layout_weight="1" android:text="@string/settings_menu_notification"
                             android:textSize="15sp" android:textColor="@color/text_primary"/>
                         <ImageView android:layout_width="16dp" android:layout_height="16dp"
                             android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
@@ -162,7 +162,7 @@
                         android:clickable="true"
                         android:focusable="true">
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                            android:layout_weight="1" android:text="화면 테마 · 진동"
+                            android:layout_weight="1" android:text="@string/settings_menu_theme_vibration"
                             android:textSize="15sp" android:textColor="@color/text_primary"/>
                         <ImageView android:layout_width="16dp" android:layout_height="16dp"
                             android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
@@ -184,7 +184,7 @@
                         android:clickable="true"
                         android:focusable="true">
                         <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                            android:layout_weight="1" android:text="차량 설정"
+                            android:layout_weight="1" android:text="@string/settings_menu_vehicle"
                             android:textSize="15sp" android:textColor="@color/text_primary"/>
                         <ImageView android:layout_width="16dp" android:layout_height="16dp"
                             android:src="@drawable/ic_chevron_right" android:alpha="0.4" android:contentDescription=""/>
@@ -215,7 +215,7 @@
                     android:clickable="true"
                     android:focusable="true">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:text="로그아웃"
+                        android:layout_weight="1" android:text="@string/settings_menu_logout"
                         android:textSize="15sp" android:textColor="#E74C3C"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>

@@ -15,7 +15,7 @@
         android:background="@color/toolbar_bg"
         android:elevation="2dp"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:title="언어"
+        app:title="@string/language_settings_title"
         app:titleTextAppearance="@style/ToolbarTitleStyle"/>
 
     <ScrollView
@@ -45,7 +45,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="앱 언어"
+                        android:text="@string/language_section_label"
                         android:textSize="12sp"
                         android:textColor="@color/text_secondary"
                         android:paddingStart="20dp" android:paddingEnd="20dp"

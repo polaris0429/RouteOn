@@ -26,7 +26,6 @@ import java.net.URL
 
 class SettingsActivity : AppCompatActivity() {
 
-    // 현재 야간 모드 여부
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
@@ -34,58 +33,86 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
-
-        // 시스템바 색상/아이콘 적용
         applySystemBarsColor()
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
+        // 툴바 제목을 strings.xml에서 가져옴
+        supportActionBar?.title = getString(R.string.settings_title)
         toolbar.setNavigationOnClickListener { finish() }
 
-        // 사용자 정보 표시
+        // 사용자 이름 표시
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-        val username = sharedPref.getString("username", "사용자") ?: "사용자"
-        val tvUserName = findViewById<TextView>(R.id.tvUserName)
-        tvUserName.text = username
+        val username = sharedPref.getString("username", getString(R.string.settings_title)) ?: getString(R.string.settings_title)
+        findViewById<TextView>(R.id.tvUserName).text = username
 
-        // 내 정보 영역 클릭 → 정보 변경 다이얼로그
-        val profileSection = findViewById<LinearLayout>(R.id.profileSection)
-        profileSection.setOnClickListener { showEditSelectionDialog() }
+        // 현재 언어 값 표시 (onResume에서도 갱신)
+        updateLanguageLabel()
+
+        // 내 정보 클릭
+        findViewById<LinearLayout>(R.id.profileSection).setOnClickListener {
+            showEditSelectionDialog()
+        }
 
         // 언어
-        val menuLanguage = findViewById<LinearLayout>(R.id.menuLanguage)
-        menuLanguage.setOnClickListener {
+        findViewById<LinearLayout>(R.id.menuLanguage).setOnClickListener {
             startActivity(Intent(this, LanguageSettingsActivity::class.java))
         }
 
         // 알림
-        val menuNotification = findViewById<LinearLayout>(R.id.menuNotification)
-        menuNotification.setOnClickListener {
+        findViewById<LinearLayout>(R.id.menuNotification).setOnClickListener {
             startActivity(Intent(this, NotificationSettingsActivity::class.java))
         }
 
         // 화면 테마 · 진동
-        val menuThemeVibration = findViewById<LinearLayout>(R.id.menuThemeVibration)
-        menuThemeVibration.setOnClickListener {
+        findViewById<LinearLayout>(R.id.menuThemeVibration).setOnClickListener {
             startActivity(Intent(this, ThemeVibrationSettingsActivity::class.java))
         }
 
         // 차량 설정
-        val menuVehicle = findViewById<LinearLayout>(R.id.menuVehicle)
-        menuVehicle.setOnClickListener {
+        findViewById<LinearLayout>(R.id.menuVehicle).setOnClickListener {
             startActivity(Intent(this, VehicleSettingsActivity::class.java))
         }
 
         // 로그아웃
-        val menuLogout = findViewById<LinearLayout>(R.id.menuLogout)
-        menuLogout?.setOnClickListener { showLogoutDialog() }
+        findViewById<LinearLayout>(R.id.menuLogout)?.setOnClickListener {
+            showLogoutDialog()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applySystemBarsColor()
+        // LanguageSettingsActivity에서 돌아왔을 때 언어 레이블 갱신
+        updateLanguageLabel()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applySystemBarsColor()
+    }
+
+    // ── 현재 저장된 언어코드 → 표시 이름으로 변환해 tvLanguageValue에 표시 ──
+    private fun updateLanguageLabel() {
+        val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val code  = prefs.getString("language", "ko") ?: "ko"
+        val label = when (code) {
+            "en" -> getString(R.string.lang_english)
+            "ja" -> getString(R.string.lang_japanese)
+            "zh" -> getString(R.string.lang_chinese)
+            else -> getString(R.string.lang_korean)
+        }
+        findViewById<TextView>(R.id.tvLanguageValue).text = label
     }
 
     // ── 정보 수정 선택 다이얼로그 ──
     private fun showEditSelectionDialog() {
-        val options = arrayOf("휴대폰 번호 변경", "비밀번호 변경")
+        val options = arrayOf(
+            getString(R.string.settings_edit_phone),
+            getString(R.string.settings_edit_password)
+        )
         AlertDialog.Builder(this)
-            .setTitle("내 정보 변경")
+            .setTitle(getString(R.string.settings_edit_info_title))
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showEditPhoneDialog()
@@ -101,24 +128,24 @@ class SettingsActivity : AppCompatActivity() {
             setPadding(60, 40, 60, 10)
         }
         val etPhone = EditText(this).apply {
-            hint = "새 휴대폰 번호 (예: 010-1234-5678)"
+            hint = getString(R.string.settings_edit_phone_hint)
             inputType = InputType.TYPE_CLASS_PHONE
             setSingleLine()
         }
         layout.addView(etPhone)
         AlertDialog.Builder(this)
-            .setTitle("휴대폰 번호 변경")
+            .setTitle(getString(R.string.settings_edit_phone_title))
             .setView(layout)
-            .setPositiveButton("변경하기") { _, _ ->
+            .setPositiveButton(getString(R.string.settings_edit_change)) { _, _ ->
                 val newPhone = etPhone.text.toString().trim()
                 if (newPhone.isNotEmpty()) {
                     val json = JSONObject().apply { put("phone", newPhone) }
                     updateMyInfoOnServer(json) {
-                        Toast.makeText(this, "변경 완료!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.settings_edit_success), Toast.LENGTH_SHORT).show()
                     }
                 }
             }
-            .setNegativeButton("취소", null)
+            .setNegativeButton(getString(R.string.settings_cancel), null)
             .show()
     }
 
@@ -128,17 +155,17 @@ class SettingsActivity : AppCompatActivity() {
             setPadding(60, 40, 60, 10)
         }
         val etCurrentPwd = EditText(this).apply {
-            hint = "현재 비밀번호"
+            hint = getString(R.string.settings_edit_password_current)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine()
         }
         val etNewPwd = EditText(this).apply {
-            hint = "새 비밀번호"
+            hint = getString(R.string.settings_edit_password_new)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine()
         }
         val etNewPwdConfirm = EditText(this).apply {
-            hint = "새 비밀번호 확인"
+            hint = getString(R.string.settings_edit_password_confirm)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setSingleLine()
         }
@@ -147,15 +174,15 @@ class SettingsActivity : AppCompatActivity() {
         layout.addView(etNewPwdConfirm)
 
         AlertDialog.Builder(this)
-            .setTitle("비밀번호 변경")
+            .setTitle(getString(R.string.settings_edit_password_title))
             .setView(layout)
-            .setPositiveButton("변경하기") { _, _ ->
+            .setPositiveButton(getString(R.string.settings_edit_change)) { _, _ ->
                 val current = etCurrentPwd.text.toString()
                 val newPwd  = etNewPwd.text.toString()
                 val confirm = etNewPwdConfirm.text.toString()
                 if (current.isEmpty() || newPwd.isEmpty() || confirm.isEmpty()) return@setPositiveButton
                 if (newPwd != confirm) {
-                    Toast.makeText(this, "새 비밀번호 불일치", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.settings_edit_password_mismatch), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 val json = JSONObject().apply {
@@ -163,10 +190,10 @@ class SettingsActivity : AppCompatActivity() {
                     put("new_password", newPwd)
                 }
                 updateMyInfoOnServer(json) {
-                    Toast.makeText(this, "변경 완료!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.settings_edit_success), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("취소", null)
+            .setNegativeButton(getString(R.string.settings_cancel), null)
             .show()
     }
 
@@ -189,27 +216,10 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // ThemeVibrationSettings 등에서 돌아올 때 재적용
-        applySystemBarsColor()
-    }
-
-    // configChanges="uiMode" 등록 시 테마 전환에도 코드로 시스템바 유지
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        applySystemBarsColor()
-    }
-
-    /**
-     * 상태바와 네비게이션바 색상 + 아이콘 모드를
-     * 현재 Configuration 기준으로 적용.
-     */
     private fun applySystemBarsColor() {
         val barColor = if (isNightMode) Color.parseColor("#1E1E1E") else Color.WHITE
         window.statusBarColor     = barColor
         window.navigationBarColor = barColor
-
         val ic = WindowInsetsControllerCompat(window, window.decorView)
         ic.isAppearanceLightStatusBars     = !isNightMode
         ic.isAppearanceLightNavigationBars = !isNightMode
@@ -217,16 +227,16 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun showLogoutDialog() {
         AlertDialog.Builder(this)
-            .setTitle("로그아웃")
-            .setMessage("정말 로그아웃 하시겠습니까?")
-            .setPositiveButton("로그아웃") { _, _ ->
+            .setTitle(getString(R.string.settings_logout_title))
+            .setMessage(getString(R.string.settings_logout_message))
+            .setPositiveButton(getString(R.string.settings_logout_confirm)) { _, _ ->
                 getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).edit { clear() }
                 val intent = Intent(this, LoginActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 startActivity(intent)
                 finish()
             }
-            .setNegativeButton("취소", null)
+            .setNegativeButton(getString(R.string.settings_cancel), null)
             .show()
     }
 }

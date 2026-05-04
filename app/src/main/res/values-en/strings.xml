@@ -1,0 +1,61 @@
+<resources>
+    <string name="app_name">RouteOn</string>
+
+    <!-- SettingsActivity -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_profile_subtitle">My Info · Address Management</string>
+    <string name="settings_menu_language">Language</string>
+    <string name="settings_menu_notification">Notifications</string>
+    <string name="settings_menu_theme_vibration">Theme · Vibration</string>
+    <string name="settings_menu_vehicle">Vehicle Settings</string>
+    <string name="settings_menu_logout">Log Out</string>
+    <string name="settings_logout_title">Log Out</string>
+    <string name="settings_logout_message">Are you sure you want to log out?</string>
+    <string name="settings_logout_confirm">Log Out</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_edit_info_title">Edit My Info</string>
+    <string name="settings_edit_phone">Change Phone Number</string>
+    <string name="settings_edit_password">Change Password</string>
+    <string name="settings_edit_phone_hint">New phone number (e.g. 010-1234-5678)</string>
+    <string name="settings_edit_phone_title">Change Phone Number</string>
+    <string name="settings_edit_password_title">Change Password</string>
+    <string name="settings_edit_password_current">Current password</string>
+    <string name="settings_edit_password_new">New password</string>
+    <string name="settings_edit_password_confirm">Confirm new password</string>
+    <string name="settings_edit_password_mismatch">Passwords do not match</string>
+    <string name="settings_edit_change">Change</string>
+    <string name="settings_edit_success">Successfully changed!</string>
+
+    <!-- LanguageSettingsActivity -->
+    <string name="language_settings_title">Language</string>
+    <string name="language_section_label">App Language</string>
+    <string name="language_changed_toast">Language changed.</string>
+
+    <!-- 언어 표시 이름 -->
+    <string name="lang_korean">한국어</string>
+    <string name="lang_english">English</string>
+    <string name="lang_japanese">日本語</string>
+    <string name="lang_chinese">中文 (简体)</string>
+
+    <!-- MainActivity -->
+    <string name="navi_no_trips">No assigned trips at the moment.</string>
+    <string name="navi_optimizing">Optimizing route…</string>
+    <string name="navi_optimized">Optimization complete! Starting guidance.</string>
+    <string name="navi_optimize_fail">Re-routing failed</string>
+    <string name="navi_ended">Guidance ended.</string>
+    <string name="navi_replanning">Calculating new route…</string>
+    <string name="navi_replan_title">🚨 Route Changed</string>
+    <string name="navi_replan_confirm">Start New Guidance</string>
+    <string name="navi_trip_completed">Trip completed.</string>
+    <string name="navi_trip_cancelled">Trip cancelled.</string>
+    <string name="navi_delivery_done">Delivery auto-completed!</string>
+    <string name="navi_cancel_confirm_title">Cancel Trip</string>
+    <string name="navi_cancel_confirm_message">Are you sure you want to cancel?</string>
+    <string name="navi_btn_start">Start</string>
+    <string name="navi_btn_cancel_trip">Cancel Trip</string>
+    <string name="navi_btn_complete_dest">🏁 Complete Trip (Destination Arrived)</string>
+    <string name="navi_btn_complete_delivery">📦 Manual Delivery Complete</string>
+    <string name="navi_location_permission">Location permission is required.</string>
+    <string name="navi_yes">Yes</string>
+    <string name="navi_no">No</string>
+</resources>

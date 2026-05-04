@@ -115,7 +115,6 @@ class MainActivity : AppCompatActivity(),
     // BottomSheet
     private var bottomSheetBehavior: BottomSheetBehavior<LinearLayout>? = null
 
-    // 현재 다크모드 여부를 Configuration 기준으로 판단
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
@@ -124,7 +123,6 @@ class MainActivity : AppCompatActivity(),
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 시스템바 정상 표시 (콘텐츠가 뒤에 안 깔리게)
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
         KNSDK.install(application, "$filesDir/knsdk")
@@ -132,19 +130,16 @@ class MainActivity : AppCompatActivity(),
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // setContentView 이후에 호출해야 decorView가 준비됨
         applySystemBarsColor()
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         lightSensor   = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
 
-        // ── 바텀시트 설정 ──
         val bsb = BottomSheetBehavior.from(binding.bottomSheet)
         bottomSheetBehavior = bsb
         bsb.isFitToContents = false
 
-        // 최대 90% 높이: expandedOffset = 화면 높이의 10%
         val screenHeight = resources.displayMetrics.heightPixels
         bsb.expandedOffset = (screenHeight * 0.05).toInt()
 
@@ -159,17 +154,12 @@ class MainActivity : AppCompatActivity(),
             }
         })
 
-        // 설정 버튼 (왼쪽 FAB)
         binding.btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-
-        // 도움말 텍스트 (가운데) → HelpActivity
         binding.btnHelp.setOnClickListener {
             startActivity(Intent(this, HelpActivity::class.java))
         }
-
-        // 채팅 버튼 (오른쪽 FAB) → ChatActivity
         binding.btnChat.setOnClickListener {
             startActivity(Intent(this, ChatActivity::class.java))
         }
@@ -179,8 +169,6 @@ class MainActivity : AppCompatActivity(),
         connectWebSocket()
     }
 
-    // ── 다크모드: 무조건 검정 고정, 라이트모드: 흰색 ──
-    // BottomSheetBehavior 가 onSlide/onStateChanged 에서 색을 덮어쓰므로 매번 재적용
     private fun applySystemBarsColor() {
         val barColor = if (isNightMode) Color.BLACK else Color.WHITE
         window.statusBarColor     = barColor
@@ -190,17 +178,14 @@ class MainActivity : AppCompatActivity(),
         ic.isAppearanceLightNavigationBars = !isNightMode
     }
 
-    // configChanges="uiMode" → 테마 전환 시 Activity 재생성 없이 여기만 호출됨
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
 
         val isDark = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
 
-        // 1. 네비뷰 다크모드 즉시 전환
         if (::naviView.isInitialized) naviView.useDarkMode = isDark
 
-        // 2. 바텀시트 UI 색상 갱신
         val bgColor     = ResourcesCompat.getColor(resources, R.color.bg_bottom_sheet, theme)
         val textColor   = ResourcesCompat.getColor(resources, R.color.text_primary, theme)
         val handleColor = ResourcesCompat.getColor(resources, R.color.drag_handle, theme)
@@ -208,11 +193,7 @@ class MainActivity : AppCompatActivity(),
         binding.bottomSheet.getChildAt(0)?.setBackgroundColor(handleColor)
         binding.bottomSheet.getChildAt(1)?.let { if (it is TextView) it.setTextColor(textColor) }
 
-        // 3. "도움이 필요하신가요?" 텍스트: configChanges=uiMode 환경에서는
-        //    Activity 재생성이 없으므로 XML 리소스 색상이 자동 갱신되지 않음 → 수동 업데이트
         binding.btnHelp.setTextColor(textColor)
-
-        // 3. 시스템바 색상/아이콘 갱신
         applySystemBarsColor()
     }
 
@@ -226,10 +207,6 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    // ThemeVibrationSettingsActivity 에서 수동으로 테마를 바꾸고 돌아올 때
-    // Android 시스템이 window decoration 을 테마 기본값으로 덮어쓴 뒤 포커스가 옵니다.
-    // onResume 보다 늦게 호출되는 onWindowFocusChanged 에서 마지막으로 재적용해야
-    // 네비게이션 바 색상이 흰색으로 남는 현상을 막을 수 있습니다.
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) applySystemBarsColor()
@@ -240,7 +217,6 @@ class MainActivity : AppCompatActivity(),
         sensorManager.unregisterListener(this)
     }
 
-    // 조도 센서
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type != Sensor.TYPE_LIGHT) return
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
@@ -264,7 +240,6 @@ class MainActivity : AppCompatActivity(),
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
-    // 진동 헬퍼
     private fun vibrate(ms: Long = 200) {
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         if (!prefs.getBoolean("vibration", false)) return
@@ -294,9 +269,11 @@ class MainActivity : AppCompatActivity(),
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 if (conn.responseCode in 200..204) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity,
-                            "운행이 ${if (status == "completed") "완료" else "취소"}되었습니다.",
-                            Toast.LENGTH_SHORT).show()
+                        val msg = if (status == "completed")
+                            getString(R.string.navi_trip_completed)
+                        else
+                            getString(R.string.navi_trip_cancelled)
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                         if (status == "completed" || status == "cancelled") {
                             KNSDK.sharedGuidance()?.stop()
                             binding.btnCompleteTrip.visibility = View.GONE
@@ -324,7 +301,11 @@ class MainActivity : AppCompatActivity(),
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 if (conn.responseCode in 200..204) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MainActivity, "📦 '$name' 배송 완료!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MainActivity,
+                            "📦 '$name' ${getString(R.string.navi_btn_complete_delivery)}",
+                            Toast.LENGTH_SHORT
+                        ).show()
                         currentStops.removeAll { it.id == deliveryId }
                         binding.btnCompleteTrip.visibility = View.GONE
                     }
@@ -344,14 +325,15 @@ class MainActivity : AppCompatActivity(),
             if (nearbyStop != null) {
                 binding.btnCompleteTrip.visibility = View.VISIBLE
                 if (nearbyStop.type == "destination") {
-                    binding.btnCompleteTrip.text = "🏁 운행 전체 완료 (목적지 도착)"
+                    binding.btnCompleteTrip.text = getString(R.string.navi_btn_complete_dest)
                     binding.btnCompleteTrip.backgroundTintList =
                         android.content.res.ColorStateList.valueOf(Color.parseColor("#2E7D32"))
                     binding.btnCompleteTrip.setOnClickListener {
                         currentNaviTripId?.let { updateTripStatus(it, "completed") }
                     }
                 } else {
-                    binding.btnCompleteTrip.text = "📦 배송지 수동 완료 (${nearbyStop.name})"
+                    binding.btnCompleteTrip.text =
+                        "${getString(R.string.navi_btn_complete_delivery)} (${nearbyStop.name})"
                     binding.btnCompleteTrip.backgroundTintList =
                         android.content.res.ColorStateList.valueOf(Color.parseColor("#0288D1"))
                     binding.btnCompleteTrip.setOnClickListener {
@@ -380,13 +362,14 @@ class MainActivity : AppCompatActivity(),
                 try {
                     val json = JSONObject(text)
                     if (json.optString("type") == "replan_requested") {
-                        val message = json.optString("message", "긴급 경유지 추가됨")
+                        val message = json.optString("message", getString(R.string.navi_replan_title))
                         val tripId  = json.optString("trip_id")
                         val wps     = json.optJSONArray("waypoints") ?: JSONArray()
                         runOnUiThread {
                             AlertDialog.Builder(this@MainActivity)
-                                .setTitle("🚨 경로 변경").setMessage(message)
-                                .setPositiveButton("재안내 시작") { _, _ ->
+                                .setTitle(getString(R.string.navi_replan_title))
+                                .setMessage(message)
+                                .setPositiveButton(getString(R.string.navi_replan_confirm)) { _, _ ->
                                     fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
                                         if (loc != null) requestReplan(tripId, loc.latitude, loc.longitude, wps)
                                     }
@@ -396,7 +379,11 @@ class MainActivity : AppCompatActivity(),
                         val arr = json.optJSONArray("arrived_deliveries")
                         if (arr != null && arr.length() > 0) {
                             runOnUiThread {
-                                Toast.makeText(this@MainActivity, "✅ 배송 자동 완료!", Toast.LENGTH_LONG).show()
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "✅ ${getString(R.string.navi_delivery_done)}",
+                                    Toast.LENGTH_LONG
+                                ).show()
                                 fetchTrips()
                             }
                         }
@@ -409,7 +396,7 @@ class MainActivity : AppCompatActivity(),
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, wps: JSONArray) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
-        Toast.makeText(this, "새 경로 계산 중...", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, getString(R.string.navi_replanning), Toast.LENGTH_LONG).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = URL("${Constants.BASE_URL}/optimize/replan")
@@ -442,7 +429,7 @@ class MainActivity : AppCompatActivity(),
                         currentLat, currentLng, dName, dLat, dLon
                     )
                 else withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "재경로 실패", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.navi_optimize_fail), Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) { }
         }
@@ -481,7 +468,7 @@ class MainActivity : AppCompatActivity(),
 
         if (jsonArray.length() == 0) {
             container.addView(TextView(this).apply {
-                text = "현재 배정된 배차(Trip)가 없습니다."
+                text = getString(R.string.navi_no_trips)
                 setPadding(20, 20, 20, 20); textSize = 16f; setTextColor(titleColor)
             }); return
         }
@@ -520,9 +507,8 @@ class MainActivity : AppCompatActivity(),
                 )
             }
             btnLayout.addView(Button(this).apply {
-                text = "안내 시작"
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                text = getString(R.string.navi_btn_start)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 backgroundTintList =
                     android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
                 setTextColor(Color.WHITE)
@@ -537,7 +523,7 @@ class MainActivity : AppCompatActivity(),
                 }
             })
             btnLayout.addView(Button(this).apply {
-                text = "운행 취소"
+                text = getString(R.string.navi_btn_cancel_trip)
                 layoutParams = LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
                 ).apply { marginStart = 20 }
@@ -546,9 +532,12 @@ class MainActivity : AppCompatActivity(),
                 setTextColor(Color.WHITE)
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
-                        .setTitle("운행 취소").setMessage("정말 취소하시겠습니까?")
-                        .setPositiveButton("예") { _, _ -> updateTripStatus(tripId, "cancelled") }
-                        .setNegativeButton("아니오", null).show()
+                        .setTitle(getString(R.string.navi_cancel_confirm_title))
+                        .setMessage(getString(R.string.navi_cancel_confirm_message))
+                        .setPositiveButton(getString(R.string.navi_yes)) { _, _ ->
+                            updateTripStatus(tripId, "cancelled")
+                        }
+                        .setNegativeButton(getString(R.string.navi_no), null).show()
                 }
             })
             itemLayout.addView(btnLayout)
@@ -590,7 +579,7 @@ class MainActivity : AppCompatActivity(),
     ) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
-        Toast.makeText(this, "경로 최적화 중...", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, getString(R.string.navi_optimizing), Toast.LENGTH_LONG).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = URL("${Constants.BASE_URL}/optimize")
@@ -654,7 +643,7 @@ class MainActivity : AppCompatActivity(),
                     ml?.pos?.x?.toInt() ?: sk.first, ml?.pos?.y?.toInt() ?: sk.second, "")
                 val gp = KNPOI(fName, gk.first, gk.second, "")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "최적화 완료! 안내를 시작합니다.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.navi_optimized), Toast.LENGTH_SHORT).show()
                     startNavigationWithWaypoints(sp, gp, vias)
                 }
             } else withContext(Dispatchers.Main) {
@@ -808,7 +797,10 @@ class MainActivity : AppCompatActivity(),
             && grantResults.isNotEmpty()
             && grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) { initKakaoNaviSDK(); startLocationUpdates() }
-        else { Toast.makeText(this, "위치 권한이 필요합니다.", Toast.LENGTH_LONG).show(); finish() }
+        else {
+            Toast.makeText(this, getString(R.string.navi_location_permission), Toast.LENGTH_LONG).show()
+            finish()
+        }
     }
 
     override fun onDestroy() {
@@ -823,12 +815,20 @@ class MainActivity : AppCompatActivity(),
     // 카카오 SDK
     // =========================================================================
     private fun initKakaoNaviSDK() {
+        // 저장된 언어 코드 → KNLanguageType 변환
+        val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val langCode = prefs.getString("language", "ko") ?: "ko"
+        val knLang = when (langCode) {
+            "en" -> KNLanguageType.KNLanguageType_ENGLISH
+            else -> KNLanguageType.KNLanguageType_KOREAN
+        }
+
         KNSDK.initializeWithAppKey(
-            aAppKey       = "b57bc6d46e97f480deecdd3a8e4cd754",
+            aAppKey        = "b57bc6d46e97f480deecdd3a8e4cd754",
             aClientVersion = "1.0",
-            aAppUserId    = "test_user",
-            aLangType     = KNLanguageType.KNLanguageType_KOREAN,
-            aCompletion   = { error ->
+            aAppUserId     = "test_user",
+            aLangType      = knLang,
+            aCompletion    = { error ->
                 if (error == null) runOnUiThread {
                     naviView = KNNaviView(this@MainActivity)
                     binding.naviContainer.addView(naviView)
@@ -858,7 +858,7 @@ class MainActivity : AppCompatActivity(),
     override fun guidanceGuideEnded(aGuidance: KNGuidance) {
         if (::naviView.isInitialized) naviView.guidanceGuideEnded(aGuidance)
         runOnUiThread {
-            Toast.makeText(this@MainActivity, "안내가 종료되었습니다.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MainActivity, getString(R.string.navi_ended), Toast.LENGTH_SHORT).show()
             binding.naviContainer.removeAllViews()
             naviView = KNNaviView(this@MainActivity)
             binding.naviContainer.addView(naviView)
