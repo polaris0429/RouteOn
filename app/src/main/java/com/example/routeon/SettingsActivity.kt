@@ -2,6 +2,7 @@ package com.example.routeon
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
@@ -11,7 +12,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.edit
 import androidx.core.view.WindowInsetsControllerCompat
@@ -24,7 +24,11 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : BaseActivity() {
+
+    // ── 개발자 모드 활성화용 탭 카운터 ──────────────────────────────────────────
+    private var devTapCount = 0
+    private val DEV_TAP_TARGET = 8
 
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -37,16 +41,19 @@ class SettingsActivity : AppCompatActivity() {
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
-        // 툴바 제목을 strings.xml에서 가져옴
         supportActionBar?.title = getString(R.string.settings_title)
         toolbar.setNavigationOnClickListener { finish() }
 
         // 사용자 이름 표시
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-        val username = sharedPref.getString("username", getString(R.string.settings_title)) ?: getString(R.string.settings_title)
+        val username = sharedPref.getString("username", getString(R.string.settings_title))
+            ?: getString(R.string.settings_title)
         findViewById<TextView>(R.id.tvUserName).text = username
 
-        // 현재 언어 값 표시 (onResume에서도 갱신)
+        // 앱 버전 표시
+        setupAppVersionRow()
+
+        // 현재 언어 값 표시
         updateLanguageLabel()
 
         // 내 정보 클릭
@@ -83,8 +90,9 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         applySystemBarsColor()
-        // LanguageSettingsActivity에서 돌아왔을 때 언어 레이블 갱신
         updateLanguageLabel()
+        // 개발자 모드 토글 후 복귀 시 버전 행 상태 반영
+        updateDevModeVersionLabel()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -92,7 +100,67 @@ class SettingsActivity : AppCompatActivity() {
         applySystemBarsColor()
     }
 
-    // ── 현재 저장된 언어코드 → 표시 이름으로 변환해 tvLanguageValue에 표시 ──
+    // ── 앱 버전 행 설정 ──────────────────────────────────────────────────────
+    private fun setupAppVersionRow() {
+        val tvVersion = findViewById<TextView>(R.id.tvAppVersion)
+
+        // versionName 읽기
+        val versionName = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0"
+        } catch (e: PackageManager.NameNotFoundException) {
+            "1.0"
+        }
+        updateDevModeVersionLabel(versionName)
+
+        // 8회 탭 → 개발자 모드 활성화
+        findViewById<LinearLayout>(R.id.menuAppVersion).setOnClickListener {
+            if (DeveloperModeManager.isEnabled(this)) {
+                Toast.makeText(this, getString(R.string.settings_dev_mode_already), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            devTapCount++
+            val remaining = DEV_TAP_TARGET - devTapCount
+
+            when {
+                devTapCount >= DEV_TAP_TARGET -> {
+                    // 활성화!
+                    devTapCount = 0
+                    DeveloperModeManager.enable(this)
+                    updateDevModeVersionLabel(versionName)
+                    refreshDevFab()   // BaseActivity의 FAB 즉시 표시
+                    Toast.makeText(
+                        this,
+                        getString(R.string.settings_dev_mode_enabled),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                remaining <= 5 -> {
+                    // 남은 횟수 안내 (마지막 5회부터)
+                    Toast.makeText(
+                        this,
+                        getString(R.string.settings_dev_mode_steps_remaining, remaining),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun updateDevModeVersionLabel(versionName: String? = null) {
+        val tvVersion = findViewById<TextView>(R.id.tvAppVersion) ?: return
+        val name = versionName ?: try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0"
+        } catch (e: Exception) { "1.0" }
+
+        tvVersion.text = if (DeveloperModeManager.isEnabled(this)) {
+            "$name 🔧"
+        } else {
+            name
+        }
+    }
+
+    // ── 언어 레이블 ──────────────────────────────────────────────────────────
     private fun updateLanguageLabel() {
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val code  = prefs.getString("language", "ko") ?: "ko"
@@ -105,7 +173,7 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tvLanguageValue).text = label
     }
 
-    // ── 정보 수정 선택 다이얼로그 ──
+    // ── 정보 수정 다이얼로그 ──────────────────────────────────────────────────
     private fun showEditSelectionDialog() {
         val options = arrayOf(
             getString(R.string.settings_edit_phone),

@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -21,11 +20,11 @@ import java.util.Locale
 
 data class ChatMessage(
     val text: String,
-    val isSent: Boolean,          // true = 내가 보낸 메시지, false = 수신
+    val isSent: Boolean,
     val time: String = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
 )
 
-class ChatActivity : AppCompatActivity() {
+class ChatActivity : BaseActivity() {
 
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -49,7 +48,6 @@ class ChatActivity : AppCompatActivity() {
         recycler.layoutManager = LinearLayoutManager(this).also { it.stackFromEnd = true }
         recycler.adapter = adapter
 
-        // 자동 환영 메시지
         addReceivedMessage("안녕하세요! 고객센터입니다. 무엇을 도와드릴까요? 😊")
 
         val etMessage = findViewById<EditText>(R.id.etMessage)
@@ -60,7 +58,6 @@ class ChatActivity : AppCompatActivity() {
             if (text.isEmpty()) return@setOnClickListener
             etMessage.text.clear()
             addSentMessage(text)
-            // 자동 응답 (실제 상담사 연결 전 임시)
             recycler.postDelayed({
                 addReceivedMessage("감사합니다. 담당자가 곧 연결됩니다. 잠시만 기다려 주세요.")
             }, 1000)
@@ -93,7 +90,6 @@ class ChatActivity : AppCompatActivity() {
         recycler.scrollToPosition(messages.size - 1)
     }
 
-    // ── RecyclerView Adapter ──
     inner class ChatAdapter(private val list: MutableList<ChatMessage>)
         : RecyclerView.Adapter<ChatAdapter.VH>() {
 

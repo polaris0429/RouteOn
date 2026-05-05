@@ -7,7 +7,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +17,7 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
-class LoginActivity : AppCompatActivity() {
+class LoginActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
@@ -40,8 +39,7 @@ class LoginActivity : AppCompatActivity() {
         val tvGoRegister = findViewById<TextView>(R.id.tv_go_register)
 
         tvGoRegister.setOnClickListener {
-            val intent = Intent(this, RegisterActivity::class.java)
-            startActivity(intent)
+            startActivity(Intent(this, RegisterActivity::class.java))
         }
 
         btnLogin.setOnClickListener {
@@ -73,7 +71,6 @@ class LoginActivity : AppCompatActivity() {
                         val response = loginConn.inputStream.bufferedReader().use { it.readText() }
                         val accessToken = JSONObject(response).getString("access_token")
 
-                        // 2. 내 정보 조회 API 호출
                         val meUrl = URL("${Constants.BASE_URL}/auth/me")
                         val meConn = meUrl.openConnection() as HttpURLConnection
                         meConn.requestMethod = "GET"
@@ -83,16 +80,15 @@ class LoginActivity : AppCompatActivity() {
                             val userResponse = meConn.inputStream.bufferedReader().use { it.readText() }
                             val userJson = JSONObject(userResponse)
 
-                            val role = userJson.optString("role")
-                            val userId = userJson.optString("id")
+                            val role     = userJson.optString("role")
+                            val userId   = userJson.optString("id")
                             val userName = userJson.optString("username")
 
                             withContext(Dispatchers.Main) {
                                 btnLogin.isEnabled = true
 
                                 if (role == "pending") {
-                                    val intent = Intent(this@LoginActivity, PendingActivity::class.java)
-                                    startActivity(intent)
+                                    startActivity(Intent(this@LoginActivity, PendingActivity::class.java))
                                 } else {
                                     sharedPref.edit().apply {
                                         putString("access_token", accessToken)
@@ -102,19 +98,16 @@ class LoginActivity : AppCompatActivity() {
                                         putString("user_id", userId)
                                         apply()
                                     }
-
                                     Toast.makeText(this@LoginActivity, "로그인 성공!", Toast.LENGTH_SHORT).show()
                                     startActivity(Intent(this@LoginActivity, MainActivity::class.java))
                                     finish()
                                 }
                             }
                         } else {
-                            // 💡 1. 백엔드에서 비활성/대기 유저의 접근을 400/401/403으로 막은 경우를 잡아냅니다.
                             withContext(Dispatchers.Main) {
                                 btnLogin.isEnabled = true
-                                if (meConn.responseCode == 400 || meConn.responseCode == 401 || meConn.responseCode == 403) {
-                                    val intent = Intent(this@LoginActivity, PendingActivity::class.java)
-                                    startActivity(intent)
+                                if (meConn.responseCode in listOf(400, 401, 403)) {
+                                    startActivity(Intent(this@LoginActivity, PendingActivity::class.java))
                                 } else {
                                     Toast.makeText(this@LoginActivity, "사용자 정보를 가져올 수 없습니다.", Toast.LENGTH_SHORT).show()
                                 }

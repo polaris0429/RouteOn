@@ -10,11 +10,10 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.view.WindowInsetsControllerCompat
 
-class HelpActivity : AppCompatActivity() {
+class HelpActivity : BaseActivity() {
 
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -29,12 +28,10 @@ class HelpActivity : AppCompatActivity() {
         setSupportActionBar(toolbar)
         toolbar.setNavigationOnClickListener { finish() }
 
-        // 배차 취소
         findViewById<LinearLayout>(R.id.itemCancelTrip).setOnClickListener {
             showCancelReasonDialog()
         }
 
-        // 기타 문의
         findViewById<LinearLayout>(R.id.itemOtherInquiry).setOnClickListener {
             showOtherInquiryDialog()
         }
@@ -54,15 +51,14 @@ class HelpActivity : AppCompatActivity() {
         ic.isAppearanceLightNavigationBars = !isNightMode
     }
 
-    // ── 배차 취소 사유 선택 ──
     private fun showCancelReasonDialog() {
         val reasons = arrayOf("차량 고장", "건강상 문제", "사고 발생", "기타 (사유 직접 입력)")
         AlertDialog.Builder(this)
             .setTitle("취소 사유를 선택해 주세요")
             .setItems(reasons) { _, which ->
                 when (which) {
-                    3 -> showDirectInputDialog()          // 기타 → 직접 입력
-                    else -> confirmCancel(reasons[which]) // 나머지 → 바로 확인
+                    3 -> showDirectInputDialog()
+                    else -> confirmCancel(reasons[which])
                 }
             }
             .setNegativeButton("닫기", null)
@@ -92,7 +88,6 @@ class HelpActivity : AppCompatActivity() {
             .setTitle("배차 취소")
             .setMessage("취소 사유: $reason\n\n배차를 취소하시겠습니까?")
             .setPositiveButton("예") { _, _ ->
-                // TODO: 실제 취소 API 연동 (MainActivity의 updateTripStatus 참고)
                 Toast.makeText(this, "취소 요청이 접수되었습니다.", Toast.LENGTH_SHORT).show()
                 finish()
             }
@@ -100,7 +95,6 @@ class HelpActivity : AppCompatActivity() {
             .show()
     }
 
-    // ── 기타 문의 ──
     private fun showOtherInquiryDialog() {
         val options = arrayOf("채팅 문의", "전화 상담")
         AlertDialog.Builder(this)

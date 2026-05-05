@@ -26,6 +26,13 @@
     <string name="settings_edit_change">변경하기</string>
     <string name="settings_edit_success">변경 완료!</string>
 
+    <!-- 앱 버전 / 개발자 모드 -->
+    <string name="settings_app_version_label">앱 버전</string>
+    <string name="settings_dev_mode_enabled">개발자 모드가 활성화되었습니다. 🔧</string>
+    <string name="settings_dev_mode_disabled">개발자 모드가 비활성화되었습니다.</string>
+    <string name="settings_dev_mode_steps_remaining">개발자가 되기까지 %1$d단계 남았습니다.</string>
+    <string name="settings_dev_mode_already">이미 개발자 모드입니다.</string>
+
     <!-- LanguageSettingsActivity -->
     <string name="language_settings_title">언어</string>
     <string name="language_section_label">앱 언어</string>

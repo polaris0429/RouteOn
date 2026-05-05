@@ -6,16 +6,10 @@ import android.graphics.Color
 import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.RadioButton
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.view.WindowInsetsControllerCompat
 
-/**
- * 차량 설정 화면
- * fuel_type  저장값: 0=휘발유, 1=고급휘발유, 2=경유, 3=LPG, 4=전기, 5=하이브리드, 6=플러그인HEV, 7=수소
- * car_type   저장값: 0=1종소형, 1=2종중형, 2=3종대형, 3=4종대형화물, 4=5종특수화물, 5=6종경차, 6=이륜차
- */
-class VehicleSettingsActivity : AppCompatActivity() {
+class VehicleSettingsActivity : BaseActivity() {
 
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -59,7 +53,6 @@ class VehicleSettingsActivity : AppCompatActivity() {
         val savedCarType  = prefs.getInt("car_type", 0)
         val savedFuelType = prefs.getInt("fuel_type", 0)
 
-        // 차량 종류
         carTypeItems.forEach { (layoutId, radioId, value) ->
             val row   = findViewById<LinearLayout>(layoutId)
             val radio = findViewById<RadioButton>(radioId)
@@ -72,7 +65,6 @@ class VehicleSettingsActivity : AppCompatActivity() {
             }
         }
 
-        // 연료 종류
         fuelItems.forEach { (layoutId, radioId, value) ->
             val row   = findViewById<LinearLayout>(layoutId)
             val radio = findViewById<RadioButton>(radioId)

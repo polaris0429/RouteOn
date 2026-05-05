@@ -220,6 +220,46 @@
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
+            <View android:layout_width="match_parent" android:layout_height="8dp" android:background="@color/bg_page"/>
+
+            <!-- 앱 버전 (8회 탭 → 개발자 모드) -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="0dp"
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/bg_surface">
+
+                <LinearLayout
+                    android:id="@+id/menuAppVersion"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@drawable/ripple_surface">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/settings_app_version_label"
+                        android:textSize="15sp"
+                        android:textColor="@color/text_primary"/>
+
+                    <TextView
+                        android:id="@+id/tvAppVersion"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="14sp"
+                        android:textColor="@color/text_secondary"/>
+
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
             <View android:layout_width="match_parent" android:layout_height="24dp" android:background="@color/bg_page"/>
 
         </LinearLayout>
