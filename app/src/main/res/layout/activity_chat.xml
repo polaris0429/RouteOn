@@ -15,7 +15,7 @@
         android:background="@color/toolbar_bg"
         android:elevation="2dp"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:title="채팅 문의"
+        app:title="@string/chat_title"
         app:titleTextAppearance="@style/ToolbarTitleStyle"/>
 
     <!-- 메시지 목록 -->
@@ -50,7 +50,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:hint="메시지를 입력하세요"
+            android:hint="@string/chat_input_hint"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_hint"
             android:background="@android:color/transparent"
@@ -64,7 +64,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:src="@drawable/ic_arrow_back"
-            android:contentDescription="전송"
+            android:contentDescription="@string/chat_send_desc"
             app:backgroundTint="@color/brand_green"
             app:tint="#FFFFFF"
             app:fabSize="mini"/>

@@ -52,60 +52,79 @@ class HelpActivity : BaseActivity() {
     }
 
     private fun showCancelReasonDialog() {
-        val reasons = arrayOf("차량 고장", "건강상 문제", "사고 발생", "기타 (사유 직접 입력)")
+        // getString()을 사용하여 xml에 정의된 값을 가져옵니다.
+        val reasons = arrayOf(
+            getString(R.string.cancel_reason_vehicle_issue),
+            getString(R.string.cancel_reason_health_issue),
+            getString(R.string.cancel_reason_accident), // "사고 발생"도 리소스화 권장
+            getString(R.string.cancel_reason_other)       // "기타" 사유
+        )
+
         AlertDialog.Builder(this)
-            .setTitle("취소 사유를 선택해 주세요")
+            .setTitle(R.string.cancel_reason_select) // setTitle에도 리소스 ID 직접 전달 가능
             .setItems(reasons) { _, which ->
                 when (which) {
                     3 -> showDirectInputDialog()
                     else -> confirmCancel(reasons[which])
                 }
             }
-            .setNegativeButton("닫기", null)
+            .setNegativeButton(R.string.close, null) // "닫기"도 다국어 대응
             .show()
     }
 
     private fun showDirectInputDialog() {
         val input = EditText(this).apply {
-            hint = "취소 사유를 입력해 주세요"
+            // hint는 String 타입이 필요하므로 getString 사용
+            hint = getString(R.string.help_direct_input_hint)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             setPadding(48, 24, 48, 24)
         }
+
         AlertDialog.Builder(this)
-            .setTitle("취소 사유 입력")
+            .setTitle(R.string.help_direct_input_title)
             .setView(input)
-            .setPositiveButton("확인") { _, _ ->
+            .setPositiveButton(R.string.common_confirm) { _, _ ->
                 val reason = input.text.toString().trim()
-                if (reason.isNotEmpty()) confirmCancel(reason)
-                else Toast.makeText(this, "사유를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+                if (reason.isNotEmpty()) {
+                    confirmCancel(reason)
+                } else {
+                    // Toast도 리소스 ID를 직접 넣을 수 있습니다.
+                    Toast.makeText(this, R.string.help_direct_input_empty_toast, Toast.LENGTH_SHORT).show()
+                }
             }
-            .setNegativeButton("취소", null)
+            .setNegativeButton(R.string.common_cancel, null)
             .show()
     }
 
     private fun confirmCancel(reason: String) {
         AlertDialog.Builder(this)
-            .setTitle("배차 취소")
-            .setMessage("취소 사유: $reason\n\n배차를 취소하시겠습니까?")
-            .setPositiveButton("예") { _, _ ->
-                Toast.makeText(this, "취소 요청이 접수되었습니다.", Toast.LENGTH_SHORT).show()
+            .setTitle(R.string.dispatch_cancel)
+            // XML의 %1$s 자리에 reason 변수를 넣어서 문장을 완성합니다.
+            .setMessage(getString(R.string.help_cancel_confirm_message, reason))
+            .setPositiveButton(R.string.common_yes) { _, _ ->
+                Toast.makeText(this, R.string.help_cancel_request_complete, Toast.LENGTH_SHORT).show()
                 finish()
             }
-            .setNegativeButton("아니오", null)
+            .setNegativeButton(R.string.common_no, null)
             .show()
     }
 
     private fun showOtherInquiryDialog() {
-        val options = arrayOf("채팅 문의", "전화 상담")
+        // 배열 안에는 String이 들어가야 하므로 getString 사용
+        val options = arrayOf(
+            getString(R.string.chat_inquiry),
+            getString(R.string.phone_support)
+        )
+
         AlertDialog.Builder(this)
-            .setTitle("기타 문의")
+            .setTitle(R.string.other_inquiry)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> startActivity(Intent(this, ChatActivity::class.java))
                     1 -> dialSupportPhone()
                 }
             }
-            .setNegativeButton("닫기", null)
+            .setNegativeButton(R.string.close, null)
             .show()
     }
 

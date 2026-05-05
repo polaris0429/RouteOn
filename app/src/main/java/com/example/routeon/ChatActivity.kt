@@ -48,7 +48,7 @@ class ChatActivity : BaseActivity() {
         recycler.layoutManager = LinearLayoutManager(this).also { it.stackFromEnd = true }
         recycler.adapter = adapter
 
-        addReceivedMessage("안녕하세요! 고객센터입니다. 무엇을 도와드릴까요? 😊")
+        addReceivedMessage(getString(R.string.chat_welcome))
 
         val etMessage = findViewById<EditText>(R.id.etMessage)
         val btnSend   = findViewById<FloatingActionButton>(R.id.btnSend)
@@ -59,7 +59,7 @@ class ChatActivity : BaseActivity() {
             etMessage.text.clear()
             addSentMessage(text)
             recycler.postDelayed({
-                addReceivedMessage("감사합니다. 담당자가 곧 연결됩니다. 잠시만 기다려 주세요.")
+                addReceivedMessage(getString(R.string.chat_auto_reply))
             }, 1000)
         }
     }

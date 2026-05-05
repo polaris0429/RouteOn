@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 개발자 FAB 동그란 배경 (반투명 파랑) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#CC1565C0"/>
+    <stroke android:width="1.5dp" android:color="#3DFFFFFF"/>
+</shape>

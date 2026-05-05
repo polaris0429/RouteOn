@@ -58,4 +58,55 @@
     <string name="navi_location_permission">Location permission is required.</string>
     <string name="navi_yes">Yes</string>
     <string name="navi_no">No</string>
+    <string name="navi_status_label">Status</string>
+    <string name="navi_no_delivery_id">No delivery ID available.</string>
+
+    <!-- MainActivity — 메인 화면 UI -->
+    <string name="main_trip_list_title">Dispatch List</string>
+    <string name="main_help_text">Need help?</string>
+    <string name="main_settings_desc">Settings</string>
+    <string name="main_chat_desc">Chat Support</string>
+
+    <!-- 앱 버전 / 개발자 모드 -->
+    <string name="settings_app_version_label">App Version</string>
+    <string name="settings_dev_mode_enabled">Developer mode has been enabled. 🔧</string>
+    <string name="settings_dev_mode_disabled">Developer mode has been disabled.</string>
+    <string name="settings_dev_mode_steps_remaining">%1$d steps away from becoming a developer.</string>
+    <string name="settings_dev_mode_already">You are already in developer mode.</string>
+
+    <!-- ChatActivity -->
+    <string name="chat_title">Chat Support</string>
+    <string name="chat_input_hint">Enter your message</string>
+    <string name="chat_send_desc">Send</string>
+    <string name="chat_welcome">Hello! How can we help you? 😊</string>
+    <string name="chat_auto_reply">Thank you. An agent will be with you shortly. Please wait a moment.</string>
+
+    <string name="help_title">Help</string>
+    <string name="help_how_can_we_help">How can we assist you?</string>
+    <string name="dispatch_cancel">Cancel Dispatch</string>
+    <string name="cancel_reason_select">Please select a reason for cancellation</string>
+    <string name="cancel_reason_vehicle_issue">Vehicle breakdown</string>
+    <string name="cancel_reason_health_issue">Health issue</string>
+    <string name="cancel_reason_accident">Accident</string>
+    <string name="cancel_reason_other">Other (please specify)</string>
+    <string name="other_inquiry">Other Inquiry</string>
+    <string name="chat_inquiry">Chat Support</string>
+    <string name="phone_support">Phone Support</string>
+    <string name="close">Close</string>
+
+    <!-- Common Buttons -->
+    <string name="common_confirm">OK</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_yes">Yes</string>
+    <string name="common_no">No</string>
+
+    <!-- HelpActivity - Direct Input Dialog -->
+    <string name="help_direct_input_title">Enter Reason</string>
+    <string name="help_direct_input_hint">Please enter the reason for cancellation</string>
+    <string name="help_direct_input_empty_toast">Please enter a reason.</string>
+
+    <!-- HelpActivity - Dispatch Cancellation Confirmation -->
+    <string name="help_cancel_confirm_message">Reason: %1$s\n\nAre you sure you want to cancel the dispatch?</string>
+    <string name="help_cancel_request_complete">Cancellation request has been submitted.</string>
+
 </resources>

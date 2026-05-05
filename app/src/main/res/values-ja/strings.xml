@@ -58,4 +58,55 @@
     <string name="navi_location_permission">位置情報の権限が必要です。</string>
     <string name="navi_yes">はい</string>
     <string name="navi_no">いいえ</string>
+    <string name="navi_status_label">ステータス</string>
+    <string name="navi_no_delivery_id">配送先IDがありません。</string>
+
+    <!-- MainActivity — 메인 화면 UI -->
+    <string name="main_trip_list_title">配車リスト</string>
+    <string name="main_help_text">お困りですか？</string>
+    <string name="main_settings_desc">設定</string>
+    <string name="main_chat_desc">チャット問い合わせ</string>
+
+    <!-- 앱 버전 / 개발자 모드 -->
+    <string name="settings_app_version_label">アプリのバージョン</string>
+    <string name="settings_dev_mode_enabled">開発者モードが有効になりました。 🔧</string>
+    <string name="settings_dev_mode_disabled">開発者モードが無効になりました。</string>
+    <string name="settings_dev_mode_steps_remaining">開発者になるまであと%1$dステップです。</string>
+    <string name="settings_dev_mode_already">すでに開発者モードです。</string>
+
+    <!-- ChatActivity -->
+    <string name="chat_title">チャット問い合わせ</string>
+    <string name="chat_input_hint">メッセージを入力してください</string>
+    <string name="chat_send_desc">送信</string>
+    <string name="chat_welcome">こんにちは！どのようにお手伝いできますか？ 😊</string>
+    <string name="chat_auto_reply">ありがとうございます。担当者がまもなく対応いたします。少々お待ちください。</string>
+
+    <string name="help_title">ヘルプ</string>
+    <string name="help_how_can_we_help">どのようにお手伝いできますか？</string>
+    <string name="dispatch_cancel">配車をキャンセル</string>
+    <string name="cancel_reason_select">キャンセル理由を選択してください</string>
+    <string name="cancel_reason_vehicle_issue">車両故障</string>
+    <string name="cancel_reason_health_issue">体調不良</string>
+    <string name="cancel_reason_accident">事故発生</string>
+    <string name="cancel_reason_other">その他（直接入力）</string>
+    <string name="other_inquiry">その他のお問い合わせ</string>
+    <string name="chat_inquiry">チャット問い合わせ</string>
+    <string name="phone_support">電話サポート</string>
+    <string name="close">閉じる</string>
+
+    <!-- 共通ボタン -->
+    <string name="common_confirm">確定</string>
+    <string name="common_cancel">キャンセル</string>
+    <string name="common_yes">はい</string>
+    <string name="common_no">いいえ</string>
+
+    <!-- HelpActivity - 直接入力ダイアログ -->
+    <string name="help_direct_input_title">キャンセル理由의入力</string>
+    <string name="help_direct_input_hint">キャンセル理由を入力してください</string>
+    <string name="help_direct_input_empty_toast">理由を入力してください。</string>
+
+    <!-- HelpActivity - 配車キャンセル確認 -->
+    <string name="help_cancel_confirm_message">キャンセル理由: %1$s\n\n配車를キャンセルしますか？</string>
+    <string name="help_cancel_request_complete">キャンセルリクエストを受け付けました。</string>
+
 </resources>

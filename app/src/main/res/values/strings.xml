@@ -51,7 +51,7 @@
     <string name="main_chat_desc">채팅 문의</string>
 
     <!-- MainActivity — 내비/운행 -->
-    <string name="navi_no_trips">현재 배정된 배차(Trip)가 없습니다.</string>
+    <string name="navi_no_trips">현재 배정된 배차가 없습니다.</string>
     <string name="navi_optimizing">경로 최적화 중…</string>
     <string name="navi_optimized">최적화 완료! 안내를 시작합니다.</string>
     <string name="navi_optimize_fail">재경로 실패</string>
@@ -78,6 +78,36 @@
     <string name="chat_title">채팅 문의</string>
     <string name="chat_input_hint">메시지를 입력하세요</string>
     <string name="chat_send_desc">전송</string>
-    <string name="chat_welcome">안녕하세요! 고객센터입니다. 무엇을 도와드릴까요? 😊</string>
+    <string name="chat_welcome">안녕하세요! 무엇을 도와드릴까요? 😊</string>
     <string name="chat_auto_reply">감사합니다. 담당자가 곧 연결됩니다. 잠시만 기다려 주세요.</string>
+
+    <string name="help_title">도움말</string>
+    <string name="help_how_can_we_help">어떻게 도와드릴까요?</string>
+    <string name="dispatch_cancel">배차 취소</string>
+    <string name="cancel_reason_select">취소 사유를 선택해 주세요</string>
+    <string name="cancel_reason_vehicle_issue">차량 고장</string>
+    <string name="cancel_reason_health_issue">건강상 문제</string>
+    <string name="cancel_reason_accident">사고발생</string>
+    <string name="cancel_reason_other">기타(직접 입력)</string>
+    <string name="other_inquiry">기타 문의</string>
+    <string name="chat_inquiry">채팅 문의</string>
+    <string name="phone_support">전화 상담</string>
+    <string name="close">닫기</string>
+
+    <!-- 공통 버튼 (여러 곳에서 재사용 가능) -->
+    <string name="common_confirm">확인</string>
+    <string name="common_cancel">취소</string>
+    <string name="common_yes">예</string>
+    <string name="common_no">아니오</string>
+
+    <!-- HelpActivity - 직접 입력 다이얼로그 관련 -->
+    <string name="help_direct_input_title">취소 사유 입력</string>
+    <string name="help_direct_input_hint">취소 사유를 입력해 주세요</string>
+    <string name="help_direct_input_empty_toast">사유를 입력해 주세요.</string>
+
+    <!-- HelpActivity - 배차 취소 확인 관련 -->
+    <!-- %1$s 자리에 입력한 사유가 동적으로 들어갑니다. -->
+    <string name="help_cancel_confirm_message">취소 사유: %1$s\n\n배차를 취소하시겠습니까?</string>
+    <string name="help_cancel_request_complete">취소 요청이 접수되었습니다.</string>
+
 </resources>

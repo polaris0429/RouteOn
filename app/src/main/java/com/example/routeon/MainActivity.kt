@@ -104,7 +104,6 @@ class MainActivity : BaseActivity(),
     private var currentNaviTripId: String? = null
     private val currentStops = mutableListOf<RouteStop>()
 
-    // 조도 센서
     private lateinit var sensorManager: SensorManager
     private var lightSensor: Sensor? = null
     private val DARK_THRESHOLD = 20f
@@ -112,12 +111,8 @@ class MainActivity : BaseActivity(),
     private var lastSwitchTime = 0L
     private val SWITCH_DEBOUNCE_MS = 3000L
 
-    // BottomSheet
     private var bottomSheetBehavior: BottomSheetBehavior<LinearLayout>? = null
 
-    // =========================================================================
-    // 자동 새로고침 — 5초 주기
-    // =========================================================================
     private val refreshHandler = Handler(Looper.getMainLooper())
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -133,7 +128,6 @@ class MainActivity : BaseActivity(),
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
 
-    // =========================================================================
     private fun playSequential(firstRes: Int, secondRes: Int) {
         try {
             val mp1 = MediaPlayer.create(this, firstRes) ?: return
@@ -149,17 +143,14 @@ class MainActivity : BaseActivity(),
         } catch (_: Exception) { }
     }
 
-    // =========================================================================
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, true)
-
         KNSDK.install(application, "$filesDir/knsdk")
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
         applySystemBarsColor()
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -169,19 +160,15 @@ class MainActivity : BaseActivity(),
         val bsb = BottomSheetBehavior.from(binding.bottomSheet)
         bottomSheetBehavior = bsb
         bsb.isFitToContents = false
-
-        val screenHeight = resources.displayMetrics.heightPixels
-        bsb.expandedOffset = (screenHeight * 0.05).toInt()
+        bsb.expandedOffset = (resources.displayMetrics.heightPixels * 0.05).toInt()
 
         bsb.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
             override fun onStateChanged(bottomSheet: View, newState: Int) {
-                val isExpanded = newState == BottomSheetBehavior.STATE_EXPANDED
-                binding.bottomActionBar.visibility = if (isExpanded) View.VISIBLE else View.GONE
+                binding.bottomActionBar.visibility =
+                    if (newState == BottomSheetBehavior.STATE_EXPANDED) View.VISIBLE else View.GONE
                 applySystemBarsColor()
             }
-            override fun onSlide(bottomSheet: View, slideOffset: Float) {
-                applySystemBarsColor()
-            }
+            override fun onSlide(bottomSheet: View, slideOffset: Float) { applySystemBarsColor() }
         })
 
         binding.btnSettings.setOnClickListener {
@@ -194,9 +181,13 @@ class MainActivity : BaseActivity(),
             startActivity(Intent(this, ChatActivity::class.java))
         }
 
+        // ── 운행 기록 버튼 ──────────────────────────────────────────────────
+        binding.btnTripHistory.setOnClickListener {
+            startActivity(Intent(this, TripHistoryActivity::class.java))
+        }
+
         checkLocationPermission()
         connectWebSocket()
-
         refreshHandler.post(refreshRunnable)
     }
 
@@ -211,19 +202,14 @@ class MainActivity : BaseActivity(),
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-
-        val isDark = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
-
+        val isDark = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         if (::naviView.isInitialized) naviView.useDarkMode = isDark
-
         val bgColor     = ResourcesCompat.getColor(resources, R.color.bg_bottom_sheet, theme)
         val textColor   = ResourcesCompat.getColor(resources, R.color.text_primary, theme)
         val handleColor = ResourcesCompat.getColor(resources, R.color.drag_handle, theme)
         binding.bottomSheet.setBackgroundColor(bgColor)
         binding.bottomSheet.getChildAt(0)?.setBackgroundColor(handleColor)
         binding.bottomSheet.getChildAt(1)?.let { if (it is TextView) it.setTextColor(textColor) }
-
         binding.btnHelp.setTextColor(textColor)
         applySystemBarsColor()
     }
@@ -233,9 +219,8 @@ class MainActivity : BaseActivity(),
         fetchTrips()
         applySystemBarsColor()
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-        if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null) {
+        if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null)
             sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
-        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -255,9 +240,8 @@ class MainActivity : BaseActivity(),
         val lux = event.values[0]
         val now = System.currentTimeMillis()
         if (now - lastSwitchTime < SWITCH_DEBOUNCE_MS) return
-        val shouldBeDark  = lux < DARK_THRESHOLD
-        val currentlyDark = isNightMode
-        if (shouldBeDark != currentlyDark) {
+        val shouldBeDark = lux < DARK_THRESHOLD
+        if (shouldBeDark != isNightMode) {
             lastSwitchTime = now
             prefs.edit().putBoolean("dark_mode", shouldBeDark).apply()
             switchHandler.post {
@@ -297,9 +281,8 @@ class MainActivity : BaseActivity(),
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 if (conn.responseCode in 200..204) {
                     withContext(Dispatchers.Main) {
-                        val msg = if (status == "completed")
-                            getString(R.string.navi_trip_completed)
-                        else getString(R.string.navi_trip_cancelled)
+                        val msg = if (status == "completed") getString(R.string.navi_trip_completed)
+                                  else getString(R.string.navi_trip_cancelled)
                         Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                         if (status == "completed" || status == "cancelled") {
                             KNSDK.sharedGuidance()?.stop()
@@ -328,11 +311,9 @@ class MainActivity : BaseActivity(),
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 if (conn.responseCode in 200..204) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            this@MainActivity,
+                        Toast.makeText(this@MainActivity,
                             "📦 '$name' ${getString(R.string.navi_btn_complete_delivery)}",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                            Toast.LENGTH_SHORT).show()
                         currentStops.removeAll { it.id == deliveryId }
                         binding.btnCompleteTrip.visibility = View.GONE
                     }
@@ -403,11 +384,8 @@ class MainActivity : BaseActivity(),
                         val arr = json.optJSONArray("arrived_deliveries")
                         if (arr != null && arr.length() > 0) {
                             runOnUiThread {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "✅ ${getString(R.string.navi_delivery_done)}",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                Toast.makeText(this@MainActivity,
+                                    "✅ ${getString(R.string.navi_delivery_done)}", Toast.LENGTH_LONG).show()
                                 fetchTrips()
                             }
                         }
@@ -433,9 +411,7 @@ class MainActivity : BaseActivity(),
                 val rem = JSONArray()
                 if (wps.length() > 0) {
                     val last = wps.getJSONObject(wps.length() - 1)
-                    dName = last.optString("name")
-                    dLat  = last.optDouble("lat")
-                    dLon  = last.optDouble("lon")
+                    dName = last.optString("name"); dLat = last.optDouble("lat"); dLon = last.optDouble("lon")
                     for (i in 0 until wps.length() - 1) rem.put(wps.getJSONObject(i))
                 }
                 OutputStreamWriter(conn.outputStream).use {
@@ -448,10 +424,8 @@ class MainActivity : BaseActivity(),
                     }.toString())
                 }
                 if (conn.responseCode in 200..201)
-                    parseAndStartNavi(
-                        JSONObject(conn.inputStream.bufferedReader().readText()),
-                        currentLat, currentLng, dName, dLat, dLon
-                    )
+                    parseAndStartNavi(JSONObject(conn.inputStream.bufferedReader().readText()),
+                        currentLat, currentLng, dName, dLat, dLon)
                 else withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, getString(R.string.navi_optimize_fail), Toast.LENGTH_SHORT).show()
                 }
@@ -464,8 +438,7 @@ class MainActivity : BaseActivity(),
             .getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/trips")
-                    .openConnection() as HttpURLConnection
+                val conn = URL("${Constants.BASE_URL}/trips").openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.connectTimeout = 5000; conn.readTimeout = 5000
@@ -480,35 +453,29 @@ class MainActivity : BaseActivity(),
     private fun processTripsUpdate(jsonArray: JSONArray) {
         val newStatuses = mutableMapOf<String, String>()
         for (i in 0 until jsonArray.length()) {
-            val obj    = jsonArray.getJSONObject(i)
-            val id     = obj.optString("id", "")
-            val status = obj.optString("status", "")
-            if (id.isNotEmpty()) newStatuses[id] = status
+            val obj = jsonArray.getJSONObject(i)
+            val id  = obj.optString("id", "")
+            val st  = obj.optString("status", "")
+            if (id.isNotEmpty()) newStatuses[id] = st
         }
-
         if (!isFirstFetch) {
             for ((id, status) in newStatuses) {
                 if (id !in knownTripStatuses && status in listOf("scheduled", "in_progress")) {
-                    playSequential(R.raw.bell, R.raw.trip_new)
-                    vibrate(200); break
+                    playSequential(R.raw.bell, R.raw.trip_new); vibrate(200); break
                 }
             }
-            for ((id, oldStatus) in knownTripStatuses) {
-                val newStatus = newStatuses[id]
-                if (oldStatus !in listOf("cancelled", "completed") && newStatus == "cancelled") {
+            for ((id, oldSt) in knownTripStatuses) {
+                if (oldSt !in listOf("cancelled","completed") && newStatuses[id] == "cancelled") {
                     playSequential(R.raw.bell, R.raw.trip_cancel); vibrate(200)
                 }
             }
-            for ((id, oldStatus) in knownTripStatuses) {
-                val newStatus = newStatuses[id]
-                if (oldStatus !in listOf("cancelled", "completed") && newStatus == "completed") {
+            for ((id, oldSt) in knownTripStatuses) {
+                if (oldSt !in listOf("cancelled","completed") && newStatuses[id] == "completed") {
                     playSequential(R.raw.bell, R.raw.trip_complite); vibrate(200)
                 }
             }
         }
-
-        knownTripStatuses.clear()
-        knownTripStatuses.putAll(newStatuses)
+        knownTripStatuses.clear(); knownTripStatuses.putAll(newStatuses)
         isFirstFetch = false
         renderRunList(jsonArray)
     }
@@ -517,15 +484,14 @@ class MainActivity : BaseActivity(),
     private fun renderRunList(jsonArray: JSONArray) {
         val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
         container.removeAllViews()
-
         val titleColor  = if (isNightMode) Color.parseColor("#E0E0E0") else Color.BLACK
         val statusColor = if (isNightMode) Color.parseColor("#AAAAAA") else Color.DKGRAY
 
         val activeItems = mutableListOf<JSONObject>()
         for (i in 0 until jsonArray.length()) {
-            val obj    = jsonArray.getJSONObject(i)
-            val status = obj.optString("status", "")
-            if (status != "cancelled" && status != "completed") activeItems.add(obj)
+            val obj = jsonArray.getJSONObject(i)
+            val st  = obj.optString("status", "")
+            if (st != "cancelled" && st != "completed") activeItems.add(obj)
         }
 
         if (activeItems.isEmpty()) {
@@ -546,8 +512,7 @@ class MainActivity : BaseActivity(),
             val itemLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(40, 40, 40, 40)
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).also { it.bottomMargin = 24 }
                 setBackgroundResource(android.R.drawable.btn_default)
             }
@@ -559,19 +524,15 @@ class MainActivity : BaseActivity(),
                 text = "상태: $status"; textSize = 14f
                 setTextColor(statusColor); setPadding(0, 8, 0, 20)
             })
-
             val btnLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             }
             btnLayout.addView(Button(this).apply {
                 text = getString(R.string.navi_btn_start)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                backgroundTintList =
-                    android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
+                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
                     currentNaviTripId = tripId
@@ -585,18 +546,14 @@ class MainActivity : BaseActivity(),
             btnLayout.addView(Button(this).apply {
                 text = getString(R.string.navi_btn_cancel_trip)
                 layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                ).apply { marginStart = 20 }
-                backgroundTintList =
-                    android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = 20 }
+                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle(getString(R.string.navi_cancel_confirm_title))
                         .setMessage(getString(R.string.navi_cancel_confirm_message))
-                        .setPositiveButton(getString(R.string.navi_yes)) { _, _ ->
-                            updateTripStatus(tripId, "cancelled")
-                        }
+                        .setPositiveButton(getString(R.string.navi_yes)) { _, _ -> updateTripStatus(tripId, "cancelled") }
                         .setNegativeButton(getString(R.string.navi_no), null).show()
                 }
             })
@@ -609,21 +566,17 @@ class MainActivity : BaseActivity(),
         if (lat < 30.0 || lng < 120.0) return null
         return withContext(Dispatchers.IO) {
             try {
-                val conn = URL(
-                    "https://dapi.kakao.com/v2/local/geo/transcoord.json" +
-                    "?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM"
-                ).openConnection() as HttpURLConnection
+                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
+                    .openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000; conn.readTimeout = 3000
                 if (conn.responseCode == 200) {
-                    val docs = JSONObject(conn.inputStream.bufferedReader().readText())
-                        .getJSONArray("documents")
+                    val docs = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("documents")
                     if (docs.length() > 0)
                         return@withContext Pair(
                             docs.getJSONObject(0).getDouble("x").toInt(),
-                            docs.getJSONObject(0).getDouble("y").toInt()
-                        )
+                            docs.getJSONObject(0).getDouble("y").toInt())
                 }
             } catch (e: Exception) { }
             null
@@ -639,8 +592,7 @@ class MainActivity : BaseActivity(),
         Toast.makeText(this, getString(R.string.navi_optimizing), Toast.LENGTH_LONG).show()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/optimize")
-                    .openConnection() as HttpURLConnection
+                val conn = URL("${Constants.BASE_URL}/optimize").openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
@@ -653,10 +605,8 @@ class MainActivity : BaseActivity(),
                     }.toString())
                 }
                 if (conn.responseCode in 200..201)
-                    parseAndStartNavi(
-                        JSONObject(conn.inputStream.bufferedReader().readText()),
-                        currentLat, currentLng, destName, destLat, destLng
-                    )
+                    parseAndStartNavi(JSONObject(conn.inputStream.bufferedReader().readText()),
+                        currentLat, currentLng, destName, destLat, destLng)
                 else withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
@@ -678,7 +628,7 @@ class MainActivity : BaseActivity(),
             for (i in 0 until arr.length()) {
                 val pt   = arr.getJSONObject(i)
                 val type = pt.optString("type", "")
-                val name = pt.optString("name", "경유지${i + 1}")
+                val name = pt.optString("name", "경유지${i+1}")
                 val lat  = pt.optDouble("lat", 0.0)
                 val lng  = pt.optDouble("lon", pt.optDouble("lng", 0.0))
                 val did  = pt.optString("delivery_id", pt.optString("id", ""))
@@ -694,19 +644,14 @@ class MainActivity : BaseActivity(),
             val gk = convertWGS84ToKATEC(fLat, fLng)
             if (sk != null && gk != null) {
                 val ml = KNSDK.sharedGuidance()?.locationGuide?.location
-                val sp = KNPOI("현재 위치",
-                    ml?.pos?.x?.toInt() ?: sk.first, ml?.pos?.y?.toInt() ?: sk.second, "")
+                val sp = KNPOI("현재 위치", ml?.pos?.x?.toInt() ?: sk.first, ml?.pos?.y?.toInt() ?: sk.second, "")
                 val gp = KNPOI(fName, gk.first, gk.second, "")
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, getString(R.string.navi_optimized), Toast.LENGTH_SHORT).show()
                     startNavigationWithWaypoints(sp, gp, vias)
                 }
-            } else withContext(Dispatchers.Main) {
-                startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng)
-            }
-        } else withContext(Dispatchers.Main) {
-            startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng)
-        }
+            } else withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
+        } else withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
     }
 
     private fun startNavigationWithWaypoints(start: KNPOI, goal: KNPOI, vias: MutableList<KNPOI>) {
@@ -737,16 +682,13 @@ class MainActivity : BaseActivity(),
         CoroutineScope(Dispatchers.IO).launch {
             if (lat < 30.0 || lng < 120.0) return@launch
             try {
-                val conn = URL(
-                    "https://dapi.kakao.com/v2/local/geo/transcoord.json" +
-                    "?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM"
-                ).openConnection() as HttpURLConnection
+                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
+                    .openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
                 conn.connectTimeout = 3000; conn.readTimeout = 3000
                 if (conn.responseCode == 200) {
-                    val docs = JSONObject(conn.inputStream.bufferedReader().readText())
-                        .getJSONArray("documents")
+                    val docs = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("documents")
                     if (docs.length() > 0) {
                         val kx = docs.getJSONObject(0).getDouble("x").toInt()
                         val ky = docs.getJSONObject(0).getDouble("y").toInt()
@@ -756,11 +698,9 @@ class MainActivity : BaseActivity(),
                                     convertWGS84ToKATEC(loc.latitude, loc.longitude)?.let { sk ->
                                         val ml = KNSDK.sharedGuidance()?.locationGuide?.location
                                         val sp = KNPOI("현재 위치",
-                                            ml?.pos?.x?.toInt() ?: sk.first,
-                                            ml?.pos?.y?.toInt() ?: sk.second, "")
-                                        val gp = KNPOI(name, kx, ky, "")
+                                            ml?.pos?.x?.toInt() ?: sk.first, ml?.pos?.y?.toInt() ?: sk.second, "")
                                         withContext(Dispatchers.Main) {
-                                            startNavigationWithWaypoints(sp, gp, mutableListOf())
+                                            startNavigationWithWaypoints(sp, KNPOI(name, kx, ky, ""), mutableListOf())
                                         }
                                     }
                                 }
@@ -777,18 +717,14 @@ class MainActivity : BaseActivity(),
         val sp = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         naviView.useDarkMode = isNightMode
         naviView.fuelType = when (sp.getInt("fuel_type", 0)) {
-            2 -> KNCarFuel.KNCarFuel_Diesel
-            3 -> KNCarFuel.KNCarFuel_LPG
-            4 -> KNCarFuel.KNCarFuel_Electric
-            5 -> KNCarFuel.KNCarFuel_HybridElectric
-            6 -> KNCarFuel.KNCarFuel_PlugInHybridElectric
-            7 -> KNCarFuel.KNCarFuel_Hydrogen
+            2 -> KNCarFuel.KNCarFuel_Diesel;       3 -> KNCarFuel.KNCarFuel_LPG
+            4 -> KNCarFuel.KNCarFuel_Electric;     5 -> KNCarFuel.KNCarFuel_HybridElectric
+            6 -> KNCarFuel.KNCarFuel_PlugInHybridElectric; 7 -> KNCarFuel.KNCarFuel_Hydrogen
             else -> KNCarFuel.KNCarFuel_Gasoline
         }
         naviView.carType = when (sp.getInt("car_type", 0)) {
-            1 -> KNCarType.KNCarType_2; 2 -> KNCarType.KNCarType_3
-            3 -> KNCarType.KNCarType_4; 4 -> KNCarType.KNCarType_5
-            5 -> KNCarType.KNCarType_6; 6 -> KNCarType.KNCarType_Bike
+            1 -> KNCarType.KNCarType_2; 2 -> KNCarType.KNCarType_3; 3 -> KNCarType.KNCarType_4
+            4 -> KNCarType.KNCarType_5; 5 -> KNCarType.KNCarType_6; 6 -> KNCarType.KNCarType_Bike
             else -> KNCarType.KNCarType_1
         }
     }
@@ -810,13 +746,12 @@ class MainActivity : BaseActivity(),
     }
 
     private fun sendLocationToServer(lat: Double, lng: Double, speed: Float) {
-        val sp = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val sp     = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val token  = sp.getString("access_token", null) ?: return
         val userId = sp.getString("user_id", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/location-logs")
-                    .openConnection() as HttpURLConnection
+                val conn = URL("${Constants.BASE_URL}/location-logs").openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
@@ -835,15 +770,12 @@ class MainActivity : BaseActivity(),
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED)
             ActivityCompat.requestPermissions(this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION),
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
                 locationPermissionRequestCode)
         else { initKakaoNaviSDK(); startLocationUpdates() }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == locationPermissionRequestCode
             && grantResults.isNotEmpty()
@@ -865,12 +797,10 @@ class MainActivity : BaseActivity(),
     }
 
     private fun initKakaoNaviSDK() {
-        val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val prefs    = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val langCode = prefs.getString("language", "ko") ?: "ko"
-        val knLang = when (langCode) {
-            "en" -> KNLanguageType.KNLanguageType_ENGLISH
-            else -> KNLanguageType.KNLanguageType_KOREAN
-        }
+        val knLang   = if (langCode == "en") KNLanguageType.KNLanguageType_ENGLISH
+                       else KNLanguageType.KNLanguageType_KOREAN
         KNSDK.initializeWithAppKey(
             aAppKey        = "b57bc6d46e97f480deecdd3a8e4cd754",
             aClientVersion = "1.0",
@@ -888,9 +818,9 @@ class MainActivity : BaseActivity(),
     }
 
     private fun setupDelegates(guidance: KNGuidance) {
-        guidance.guideStateDelegate    = this; guidance.locationGuideDelegate = this
-        guidance.routeGuideDelegate    = this; guidance.safetyGuideDelegate   = this
-        guidance.voiceGuideDelegate    = this; guidance.citsGuideDelegate     = this
+        guidance.guideStateDelegate = this;  guidance.locationGuideDelegate = this
+        guidance.routeGuideDelegate = this;  guidance.safetyGuideDelegate   = this
+        guidance.voiceGuideDelegate = this;  guidance.citsGuideDelegate     = this
         naviView.mapComponent.mapView.isVisibleTraffic = true
     }
 
@@ -910,16 +840,12 @@ class MainActivity : BaseActivity(),
             binding.naviContainer.removeAllViews()
             naviView = KNNaviView(this@MainActivity)
             binding.naviContainer.addView(naviView)
-            applyNaviSettings()
-            startSafeDriving()
+            applyNaviSettings(); startSafeDriving()
         }
     }
 
     override fun willPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
-        if (::naviView.isInitialized) naviView.willPlayVoiceGuide(aGuidance, aVoiceGuide)
-        vibrate(150)
-    }
-
+        if (::naviView.isInitialized) naviView.willPlayVoiceGuide(aGuidance, aVoiceGuide); vibrate(150) }
     override fun guidanceGuideStarted(aGuidance: KNGuidance) {
         if (::naviView.isInitialized) naviView.guidanceGuideStarted(aGuidance) }
     override fun guidanceCheckingRouteChange(aGuidance: KNGuidance) {
@@ -930,30 +856,21 @@ class MainActivity : BaseActivity(),
         if (::naviView.isInitialized) naviView.guidanceRouteUnchangedWithError(aGuidnace, aError) }
     override fun guidanceOutOfRoute(aGuidance: KNGuidance) {
         if (::naviView.isInitialized) naviView.guidanceOutOfRoute(aGuidance) }
-    override fun guidanceRouteChanged(
-        aGuidance: KNGuidance, f: KNRoute, fl: KNLocation,
-        t: KNRoute, tl: KNLocation, r: KNGuideRouteChangeReason) {}
-    override fun guidanceDidUpdateRoutes(
-        aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) {
+    override fun guidanceRouteChanged(aGuidance: KNGuidance, f: KNRoute, fl: KNLocation,
+                                       t: KNRoute, tl: KNLocation, r: KNGuideRouteChangeReason) {}
+    override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) {
         if (::naviView.isInitialized) naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo) }
     override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {}
-    override fun guidanceDidUpdateLocation(
-        aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) {
+    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) {
         if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide) }
-    override fun guidanceDidUpdateRouteGuide(
-        aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) {
+    override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) {
         if (::naviView.isInitialized) naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide) }
-    override fun guidanceDidUpdateSafetyGuide(
-        aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) {
+    override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) {
         if (::naviView.isInitialized) naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide) }
-    override fun guidanceDidUpdateAroundSafeties(
-        aGuidance: KNGuidance, aSafeties: List<KNSafety>?) {
+    override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<KNSafety>?) {
         if (::naviView.isInitialized) naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties) }
-    override fun shouldPlayVoiceGuide(
-        aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice,
-        aNewData: MutableList<ByteArray>): Boolean =
-        if (::naviView.isInitialized)
-            naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
+    override fun shouldPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice, aNewData: MutableList<ByteArray>): Boolean =
+        if (::naviView.isInitialized) naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
     override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
         if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
     override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) {
