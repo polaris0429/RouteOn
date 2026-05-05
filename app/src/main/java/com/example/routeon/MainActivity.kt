@@ -529,9 +529,32 @@ class MainActivity : BaseActivity(),
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             }
+            // 취소 버튼 먼저 추가
+            btnLayout.addView(Button(this).apply {
+                text = getString(R.string.navi_btn_cancel_trip)
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                ).apply { marginEnd = 20 } // 👉 오른쪽 간격으로 변경
+                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
+                setTextColor(Color.WHITE)
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle(getString(R.string.navi_cancel_confirm_title))
+                        .setMessage(getString(R.string.navi_cancel_confirm_message))
+                        .setPositiveButton(getString(R.string.navi_yes)) { _, _ ->
+                            updateTripStatus(tripId, "cancelled")
+                        }
+                        .setNegativeButton(getString(R.string.navi_no), null)
+                        .show()
+                }
+            })
+
+// 출발 버튼 나중에 추가
             btnLayout.addView(Button(this).apply {
                 text = getString(R.string.navi_btn_start)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                )
                 backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
@@ -540,21 +563,9 @@ class MainActivity : BaseActivity(),
                     fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
                         if (loc != null) optimizeAndStartNavi(tripId, destName, lat, lng, loc.latitude, loc.longitude)
                         else startNavigationWithWGS84(destName, lat, lng)
-                    }.addOnFailureListener { startNavigationWithWGS84(destName, lat, lng) }
-                }
-            })
-            btnLayout.addView(Button(this).apply {
-                text = getString(R.string.navi_btn_cancel_trip)
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = 20 }
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
-                setTextColor(Color.WHITE)
-                setOnClickListener {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle(getString(R.string.navi_cancel_confirm_title))
-                        .setMessage(getString(R.string.navi_cancel_confirm_message))
-                        .setPositiveButton(getString(R.string.navi_yes)) { _, _ -> updateTripStatus(tripId, "cancelled") }
-                        .setNegativeButton(getString(R.string.navi_no), null).show()
+                    }.addOnFailureListener {
+                        startNavigationWithWGS84(destName, lat, lng)
+                    }
                 }
             })
             itemLayout.addView(btnLayout)

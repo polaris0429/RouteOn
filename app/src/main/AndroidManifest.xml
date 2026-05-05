@@ -33,10 +33,6 @@
 
         <activity android:name=".RegisterActivity" android:exported="false"/>
 
-        <!--
-            configChanges="uiMode" : 다크/라이트 모드 전환 시 Activity 재생성 없이
-            onConfigurationChanged() 만 호출됨 → KNNaviView 유지
-        -->
         <activity
             android:name=".MainActivity"
             android:exported="false"
@@ -46,15 +42,14 @@
             android:exported="false"
             android:screenOrientation="portrait"/>
 
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"/>
-        <activity android:name=".NotificationSettingsActivity"   android:exported="false"/>
-        <activity android:name=".ThemeVibrationSettingsActivity" android:exported="false"/>
-        <activity android:name=".VehicleSettingsActivity"        android:exported="false"/>
-        <activity android:name=".LanguageSettingsActivity"       android:exported="false"/>
+        <activity android:name=".SettingsActivity"                android:exported="false"/>
+        <activity android:name=".NotificationSettingsActivity"    android:exported="false"/>
+        <activity android:name=".ThemeVibrationSettingsActivity"  android:exported="false"/>
+        <activity android:name=".VehicleSettingsActivity"         android:exported="false"/>
+        <activity android:name=".LanguageSettingsActivity"        android:exported="false"/>
         <activity android:name=".HelpActivity"                    android:exported="false"/>
         <activity android:name=".ChatActivity"                    android:exported="false"/>
+        <activity android:name=".TripHistoryActivity"             android:exported="false"/>
 
     </application>
 </manifest>
