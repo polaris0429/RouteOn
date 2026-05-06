@@ -25,7 +25,9 @@ class LoginActivity : BaseActivity() {
 
         val sharedPref = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
 
+        // 이미 로그인된 상태면 서비스 재시작 후 메인으로
         if (sharedPref.getBoolean("isLoggedIn", false)) {
+            ChatWebSocketService.start(this)
             startActivity(Intent(this, MainActivity::class.java))
             finish()
             return
@@ -33,9 +35,9 @@ class LoginActivity : BaseActivity() {
 
         setContentView(R.layout.activity_login)
 
-        val etUsername = findViewById<EditText>(R.id.et_username)
-        val etPassword = findViewById<EditText>(R.id.et_password)
-        val btnLogin = findViewById<Button>(R.id.btn_login)
+        val etUsername   = findViewById<EditText>(R.id.et_username)
+        val etPassword   = findViewById<EditText>(R.id.et_password)
+        val btnLogin     = findViewById<Button>(R.id.btn_login)
         val tvGoRegister = findViewById<TextView>(R.id.tv_go_register)
 
         tvGoRegister.setOnClickListener {
@@ -55,7 +57,7 @@ class LoginActivity : BaseActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val loginUrl = URL("${Constants.BASE_URL}/auth/login")
+                    val loginUrl  = URL("${Constants.BASE_URL}/auth/login")
                     val loginConn = loginUrl.openConnection() as HttpURLConnection
                     loginConn.requestMethod = "POST"
                     loginConn.setRequestProperty("Content-Type", "application/json")
@@ -68,21 +70,20 @@ class LoginActivity : BaseActivity() {
                     OutputStreamWriter(loginConn.outputStream).use { it.write(loginJson.toString()) }
 
                     if (loginConn.responseCode == 200) {
-                        val response = loginConn.inputStream.bufferedReader().use { it.readText() }
+                        val response    = loginConn.inputStream.bufferedReader().use { it.readText() }
                         val accessToken = JSONObject(response).getString("access_token")
 
-                        val meUrl = URL("${Constants.BASE_URL}/auth/me")
+                        val meUrl  = URL("${Constants.BASE_URL}/auth/me")
                         val meConn = meUrl.openConnection() as HttpURLConnection
                         meConn.requestMethod = "GET"
                         meConn.setRequestProperty("Authorization", "Bearer $accessToken")
 
                         if (meConn.responseCode == 200) {
                             val userResponse = meConn.inputStream.bufferedReader().use { it.readText() }
-                            val userJson = JSONObject(userResponse)
-
-                            val role     = userJson.optString("role")
-                            val userId   = userJson.optString("id")
-                            val userName = userJson.optString("username")
+                            val userJson     = JSONObject(userResponse)
+                            val role         = userJson.optString("role")
+                            val userId       = userJson.optString("id")
+                            val userName     = userJson.optString("username")
 
                             withContext(Dispatchers.Main) {
                                 btnLogin.isEnabled = true
@@ -98,6 +99,9 @@ class LoginActivity : BaseActivity() {
                                         putString("user_id", userId)
                                         apply()
                                     }
+                                    // ★ 로그인 성공 후 채팅 WS 서비스 시작
+                                    ChatWebSocketService.start(this@LoginActivity)
+
                                     Toast.makeText(this@LoginActivity, "로그인 성공!", Toast.LENGTH_SHORT).show()
                                     startActivity(Intent(this@LoginActivity, MainActivity::class.java))
                                     finish()
