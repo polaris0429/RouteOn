@@ -82,7 +82,9 @@ import java.net.URL
 
 data class RouteStop(
     val id: String, val name: String,
-    val lat: Double, val lng: Double, val type: String
+    val lat: Double, val lng: Double,
+    /** "loading" | "unloading" | "waypoint" | "rest_stop" | "destination" */
+    val type: String
 )
 
 class MainActivity : BaseActivity(),
@@ -180,8 +182,6 @@ class MainActivity : BaseActivity(),
         binding.btnChat.setOnClickListener {
             startActivity(Intent(this, ChatActivity::class.java))
         }
-
-        // ── 운행 기록 버튼 ──────────────────────────────────────────────────
         binding.btnTripHistory.setOnClickListener {
             startActivity(Intent(this, TripHistoryActivity::class.java))
         }
@@ -322,6 +322,7 @@ class MainActivity : BaseActivity(),
         }
     }
 
+    // ── [변경] loading/unloading/destination 타입별 버튼 구분 ─────────────────
     private fun checkProximityToStops(currentLat: Double, currentLng: Double) {
         var nearbyStop: RouteStop? = null
         for (stop in currentStops) {
@@ -332,20 +333,33 @@ class MainActivity : BaseActivity(),
         runOnUiThread {
             if (nearbyStop != null) {
                 binding.btnCompleteTrip.visibility = View.VISIBLE
-                if (nearbyStop.type == "destination") {
-                    binding.btnCompleteTrip.text = getString(R.string.navi_btn_complete_dest)
-                    binding.btnCompleteTrip.backgroundTintList =
-                        android.content.res.ColorStateList.valueOf(Color.parseColor("#2E7D32"))
-                    binding.btnCompleteTrip.setOnClickListener {
-                        currentNaviTripId?.let { updateTripStatus(it, "completed") }
+                when (nearbyStop.type) {
+                    "destination" -> {
+                        binding.btnCompleteTrip.text = getString(R.string.navi_btn_complete_dest)
+                        binding.btnCompleteTrip.backgroundTintList =
+                            android.content.res.ColorStateList.valueOf(Color.parseColor("#2E7D32"))
+                        binding.btnCompleteTrip.setOnClickListener {
+                            currentNaviTripId?.let { updateTripStatus(it, "completed") }
+                        }
                     }
-                } else {
-                    binding.btnCompleteTrip.text =
-                        "${getString(R.string.navi_btn_complete_delivery)} (${nearbyStop.name})"
-                    binding.btnCompleteTrip.backgroundTintList =
-                        android.content.res.ColorStateList.valueOf(Color.parseColor("#0288D1"))
-                    binding.btnCompleteTrip.setOnClickListener {
-                        completeDelivery(nearbyStop.id, nearbyStop.name)
+                    "loading" -> {
+                        // 상차지 완료
+                        binding.btnCompleteTrip.text = "🚛 상차 완료 (${nearbyStop.name})"
+                        binding.btnCompleteTrip.backgroundTintList =
+                            android.content.res.ColorStateList.valueOf(Color.parseColor("#E65100"))
+                        binding.btnCompleteTrip.setOnClickListener {
+                            completeDelivery(nearbyStop.id, nearbyStop.name)
+                        }
+                    }
+                    else -> {
+                        // unloading / waypoint / rest_stop → 하차·배송 완료
+                        binding.btnCompleteTrip.text =
+                            "${getString(R.string.navi_btn_complete_delivery)} (${nearbyStop.name})"
+                        binding.btnCompleteTrip.backgroundTintList =
+                            android.content.res.ColorStateList.valueOf(Color.parseColor("#0288D1"))
+                        binding.btnCompleteTrip.setOnClickListener {
+                            completeDelivery(nearbyStop.id, nearbyStop.name)
+                        }
                     }
                 }
             } else {
@@ -395,6 +409,7 @@ class MainActivity : BaseActivity(),
         })
     }
 
+    // ── [변경] remaining_waypoints에 type 필드 보존 + _resolve_dest 동일 로직 ─
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, wps: JSONArray) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
@@ -406,14 +421,47 @@ class MainActivity : BaseActivity(),
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.connectTimeout = 15000; conn.readTimeout = 15000; conn.doOutput = true
+                conn.connectTimeout = 30000; conn.readTimeout = 30000; conn.doOutput = true
+
+                // 목적지 결정: 마지막 unloading → 마지막 loading → 마지막 waypoint 순 (_resolve_dest와 동일)
                 var dName = "목적지"; var dLat = 0.0; var dLon = 0.0
                 val rem = JSONArray()
+
                 if (wps.length() > 0) {
-                    val last = wps.getJSONObject(wps.length() - 1)
-                    dName = last.optString("name"); dLat = last.optDouble("lat"); dLon = last.optDouble("lon")
-                    for (i in 0 until wps.length() - 1) rem.put(wps.getJSONObject(i))
+                    var destIdx = -1
+                    for (i in wps.length() - 1 downTo 0) {
+                        if (wps.getJSONObject(i).optString("type", "unloading") == "unloading") {
+                            destIdx = i; break
+                        }
+                    }
+                    if (destIdx == -1) {
+                        for (i in wps.length() - 1 downTo 0) {
+                            if (wps.getJSONObject(i).optString("type", "") == "loading") {
+                                destIdx = i; break
+                            }
+                        }
+                    }
+                    if (destIdx == -1) destIdx = wps.length() - 1
+
+                    val destWp = wps.getJSONObject(destIdx)
+                    dName = destWp.optString("name")
+                    dLat  = destWp.optDouble("lat")
+                    dLon  = destWp.optDouble("lon")
+
+                    // 나머지 경유지: type 필드 포함해서 전달
+                    for (i in 0 until wps.length()) {
+                        if (i == destIdx) continue
+                        val wp = wps.getJSONObject(i)
+                        rem.put(JSONObject().apply {
+                            put("name", wp.optString("name"))
+                            put("lat",  wp.optDouble("lat"))
+                            put("lon",  wp.optDouble("lon"))
+                            val t = wp.optString("type", "")
+                            if (t.isNotEmpty()) put("type", t)
+                        })
+                    }
                 }
+
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply {
                         put("trip_id", tripId); put("current_name", "현재 위치")
@@ -480,6 +528,7 @@ class MainActivity : BaseActivity(),
         renderRunList(jsonArray)
     }
 
+    // ── [변경] nullable dest_* 처리 + loading_count/unloading_count 표시 ─────
     @SuppressLint("SetTextI18n", "MissingPermission")
     private fun renderRunList(jsonArray: JSONArray) {
         val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
@@ -502,11 +551,24 @@ class MainActivity : BaseActivity(),
         }
 
         activeItems.forEachIndexed { index, obj ->
-            val tripId   = obj.optString("id", "")
-            val destName = obj.optString("dest_name", obj.optString("address", "목적지 없음"))
-            val lat = obj.optDouble("dest_lat", obj.optDouble("lat", 0.0))
-            val lng = obj.optDouble("dest_lon",
-                obj.optDouble("dest_lng", obj.optDouble("lon", obj.optDouble("lng", 0.0))))
+            val tripId = obj.optString("id", "")
+
+            // ── dest_* nullable 처리 ──────────────────────────────────────────
+            val rawDestName = obj.optString("dest_name", "")
+            val rawDestLat  = obj.optDouble("dest_lat", 0.0)
+            val rawDestLon  = obj.optDouble("dest_lon", 0.0)
+
+            // loading_count / unloading_count (백엔드 신규 필드)
+            val loadingCount   = obj.optInt("loading_count", 0)
+            val unloadingCount = obj.optInt("unloading_count", 0)
+
+            // 화면 표시 이름: dest_name 우선, 없으면 상차/하차 건수로 표시
+            val displayName = rawDestName.takeIf { it.isNotEmpty() } ?: run {
+                val parts = mutableListOf<String>()
+                if (loadingCount > 0)   parts.add("상차지 ${loadingCount}건")
+                if (unloadingCount > 0) parts.add("하차지 ${unloadingCount}건")
+                parts.joinToString(" / ").takeIf { it.isNotEmpty() } ?: "경유지 운행"
+            }
             val status = obj.optString("status", "대기")
 
             val itemLayout = LinearLayout(this).apply {
@@ -517,9 +579,22 @@ class MainActivity : BaseActivity(),
                 setBackgroundResource(android.R.drawable.btn_default)
             }
             itemLayout.addView(TextView(this).apply {
-                text = "${index + 1}. $destName"; textSize = 16f
+                text = "${index + 1}. $displayName"; textSize = 16f
                 setTypeface(null, android.graphics.Typeface.BOLD); setTextColor(titleColor)
             })
+
+            // dest_name 있을 때 상차/하차 건수 부제목 추가
+            if (rawDestName.isNotEmpty() && (loadingCount > 0 || unloadingCount > 0)) {
+                itemLayout.addView(TextView(this).apply {
+                    val parts = mutableListOf<String>()
+                    if (loadingCount > 0)   parts.add("상차 ${loadingCount}건")
+                    if (unloadingCount > 0) parts.add("하차 ${unloadingCount}건")
+                    text = parts.joinToString(" · ")
+                    textSize = 12f; setTextColor(Color.parseColor("#FF8F00"))
+                    setPadding(0, 4, 0, 0)
+                })
+            }
+
             itemLayout.addView(TextView(this).apply {
                 text = "상태: $status"; textSize = 14f
                 setTextColor(statusColor); setPadding(0, 8, 0, 20)
@@ -529,12 +604,13 @@ class MainActivity : BaseActivity(),
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             }
-            // 취소 버튼 먼저 추가
+
+            // 취소 버튼
             btnLayout.addView(Button(this).apply {
                 text = getString(R.string.navi_btn_cancel_trip)
                 layoutParams = LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                ).apply { marginEnd = 20 } // 👉 오른쪽 간격으로 변경
+                ).apply { marginEnd = 20 }
                 backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
@@ -549,22 +625,24 @@ class MainActivity : BaseActivity(),
                 }
             })
 
-// 출발 버튼 나중에 추가
+            // 출발 버튼 — origin optional: GPS 있으면 포함, 없으면 백엔드 Redis 폴백
             btnLayout.addView(Button(this).apply {
                 text = getString(R.string.navi_btn_start)
                 layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                )
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
                 setTextColor(Color.WHITE)
                 setOnClickListener {
                     currentNaviTripId = tripId
                     bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
                     fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                        if (loc != null) optimizeAndStartNavi(tripId, destName, lat, lng, loc.latitude, loc.longitude)
-                        else startNavigationWithWGS84(destName, lat, lng)
+                        optimizeAndStartNavi(
+                            tripId, displayName, rawDestLat, rawDestLon,
+                            loc?.latitude, loc?.longitude
+                        )
                     }.addOnFailureListener {
-                        startNavigationWithWGS84(destName, lat, lng)
+                        // GPS 취득 실패 → origin 없이 호출 (백엔드 Redis 폴백)
+                        optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, null, null)
                     }
                 }
             })
@@ -594,9 +672,10 @@ class MainActivity : BaseActivity(),
         }
     }
 
+    // ── [변경] origin_* Optional 지원 + nullable dest 처리 ───────────────────
     private fun optimizeAndStartNavi(
         tripId: String, destName: String, destLat: Double, destLng: Double,
-        currentLat: Double, currentLng: Double
+        currentLat: Double?, currentLng: Double?
     ) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
@@ -607,24 +686,48 @@ class MainActivity : BaseActivity(),
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.connectTimeout = 15000; conn.readTimeout = 15000; conn.doOutput = true
+                conn.connectTimeout = 30000; conn.readTimeout = 30000; conn.doOutput = true
+
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply {
-                        put("trip_id", tripId); put("origin_name", "현재 위치")
-                        put("origin_lat", currentLat); put("origin_lon", currentLng)
-                        put("initial_drive_sec", 0); put("is_emergency", false)
+                        put("trip_id", tripId)
+                        // origin_* Optional — GPS 있을 때만 포함, 없으면 백엔드가 Redis에서 폴백
+                        if (currentLat != null && currentLng != null) {
+                            put("origin_name", "현재 위치")
+                            put("origin_lat",  currentLat)
+                            put("origin_lon",  currentLng)
+                        }
+                        put("initial_drive_sec", 0)
+                        put("is_emergency", false)
                     }.toString())
                 }
-                if (conn.responseCode in 200..201)
-                    parseAndStartNavi(JSONObject(conn.inputStream.bufferedReader().readText()),
-                        currentLat, currentLng, destName, destLat, destLng)
-                else withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
+
+                if (conn.responseCode in 200..201) {
+                    parseAndStartNavi(
+                        JSONObject(conn.inputStream.bufferedReader().readText()),
+                        currentLat ?: 0.0, currentLng ?: 0.0,
+                        destName, destLat, destLng
+                    )
+                } else withContext(Dispatchers.Main) {
+                    if (destLat != 0.0 && destLng != 0.0)
+                        startNavigationWithWGS84(destName, destLat, destLng)
+                    else
+                        Toast.makeText(this@MainActivity,
+                            getString(R.string.navi_optimize_fail), Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { startNavigationWithWGS84(destName, destLat, destLng) }
+                withContext(Dispatchers.Main) {
+                    if (destLat != 0.0 && destLng != 0.0)
+                        startNavigationWithWGS84(destName, destLat, destLng)
+                    else
+                        Toast.makeText(this@MainActivity,
+                            getString(R.string.navi_optimize_fail), Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
 
+    // ── [변경] loading/unloading/node_type 처리 + destination 자동 승격 ──────
     private suspend fun parseAndStartNavi(
         jsonResponse: JSONObject, currentLat: Double, currentLng: Double,
         fallbackDestName: String, fallbackLat: Double, fallbackLng: Double
@@ -632,25 +735,59 @@ class MainActivity : BaseActivity(),
         val arr = jsonResponse.optJSONArray("route")
             ?: jsonResponse.optJSONArray("optimized_route")
             ?: jsonResponse.optJSONArray("waypoints")
+
         if (arr != null && arr.length() > 0) {
             val vias = mutableListOf<KNPOI>()
             var fName = fallbackDestName; var fLat = fallbackLat; var fLng = fallbackLng
             currentStops.clear()
+
             for (i in 0 until arr.length()) {
-                val pt   = arr.getJSONObject(i)
-                val type = pt.optString("type", "")
+                val pt = arr.getJSONObject(i)
+
+                // type: "origin"|"loading"|"unloading"|"waypoint"|"rest_stop"|"destination"
+                // node_type: 백엔드가 loading/unloading 구분을 위해 추가한 별도 필드
+                val rawType  = pt.optString("type", "")
+                val nodeType = pt.optString("node_type", "")
+
+                // effectiveType: node_type 우선, 없으면 type 사용
+                val effectiveType = when {
+                    nodeType.isNotEmpty() -> nodeType
+                    rawType in listOf("loading", "unloading") -> rawType
+                    else -> rawType
+                }
+
                 val name = pt.optString("name", "경유지${i+1}")
                 val lat  = pt.optDouble("lat", 0.0)
                 val lng  = pt.optDouble("lon", pt.optDouble("lng", 0.0))
                 val did  = pt.optString("delivery_id", pt.optString("id", ""))
-                if (type == "waypoint" || type == "destination")
-                    currentStops.add(RouteStop(did, name, lat, lng, type))
-                when (type) {
-                    "waypoint", "rest_stop" ->
-                        convertWGS84ToKATEC(lat, lng)?.let { vias.add(KNPOI(name, it.first, it.second, "")) }
+
+                // 도착 감지 대상: origin 제외 모든 지점
+                if (rawType != "origin") {
+                    currentStops.add(RouteStop(did, name, lat, lng, effectiveType))
+                }
+
+                // KNSDK 경유지/목적지 분류
+                when (rawType) {
+                    "loading", "unloading", "waypoint", "rest_stop" ->
+                        convertWGS84ToKATEC(lat, lng)?.let {
+                            vias.add(KNPOI(name, it.first, it.second, ""))
+                        }
                     "destination" -> { fName = name; fLat = lat; fLng = lng }
+                    // "origin" 무시
                 }
             }
+
+            // destination 노드가 없는 경우(백엔드가 waypoints 내부에서 자동 결정한 경우):
+            // currentStops 마지막 항목을 destination으로 승격
+            if (currentStops.none { it.type == "destination" } && currentStops.isNotEmpty()) {
+                val last = currentStops.last()
+                currentStops[currentStops.lastIndex] = last.copy(type = "destination")
+                if (fLat == fallbackLat && fLng == fallbackLng && last.lat != 0.0) {
+                    fName = last.name; fLat = last.lat; fLng = last.lng
+                    if (vias.isNotEmpty()) vias.removeAt(vias.lastIndex)
+                }
+            }
+
             val sk = convertWGS84ToKATEC(currentLat, currentLng)
             val gk = convertWGS84ToKATEC(fLat, fLng)
             if (sk != null && gk != null) {
@@ -661,19 +798,33 @@ class MainActivity : BaseActivity(),
                     Toast.makeText(this@MainActivity, getString(R.string.navi_optimized), Toast.LENGTH_SHORT).show()
                     startNavigationWithWaypoints(sp, gp, vias)
                 }
-            } else withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
-        } else withContext(Dispatchers.Main) { startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng) }
+            } else withContext(Dispatchers.Main) {
+                startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng)
+            }
+        } else withContext(Dispatchers.Main) {
+            startNavigationWithWGS84(fallbackDestName, fallbackLat, fallbackLng)
+        }
     }
 
     private fun startNavigationWithWaypoints(start: KNPOI, goal: KNPOI, vias: MutableList<KNPOI>) {
         val guidance = KNSDK.sharedGuidance() ?: return
         guidance.stop()
-        KNSDK.makeTripWithStart(start, goal, vias) { _, aTrip ->
+
+        val limitedVias = if (vias.size > 10) {
+            runOnUiThread {
+                Toast.makeText(this, "경유지가 많아 가까운 10개까지만 먼저 안내합니다.", Toast.LENGTH_LONG).show()
+            }
+            vias.take(10).toMutableList()
+        } else {
+            vias
+        }
+
+        KNSDK.makeTripWithStart(start, goal, limitedVias) { error, aTrip ->
             if (aTrip != null) {
                 val pri   = KNRoutePriority.KNRoutePriority_Recommand
                 val avoid = KNRouteAvoidOption.KNRouteAvoidOption_None.value
-                aTrip.routeWithPriority(pri, avoid) { error, _ ->
-                    if (error == null) runOnUiThread {
+                aTrip.routeWithPriority(pri, avoid) { routeError, _ ->
+                    if (routeError == null) runOnUiThread {
                         binding.naviContainer.removeAllViews()
                         naviView = KNNaviView(this@MainActivity)
                         binding.naviContainer.addView(naviView)
@@ -682,7 +833,17 @@ class MainActivity : BaseActivity(),
                             setupDelegates(this)
                             naviView.initWithGuidance(this, aTrip, pri, avoid)
                         }
-                    } else Log.e("KNSDK", "탐색 실패: ${error.msg}")
+                    } else {
+                        Log.e("KNSDK", "탐색 실패: ${routeError.msg}")
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "경로 탐색 실패: ${routeError.msg}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } else {
+                Log.e("KNSDK", "Trip 생성 실패: ${error?.msg}")
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "경로 생성 실패: ${error?.msg}", Toast.LENGTH_LONG).show()
                 }
             }
         }

@@ -31,516 +31,341 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 // =============================================================================
 // 데이터 클래스
 // =============================================================================
-
 data class ChatMessage(
     val id: String = "",
     val text: String,
     val isSent: Boolean,
-    val time: String = nowHHmm(),
-    val timestampMs: Long = System.currentTimeMillis()
+    val time: String,
+    val timestampMs: Long
 )
-
-private fun nowHHmm() = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
 
 // =============================================================================
 // ChatActivity
 // =============================================================================
-
 class ChatActivity : BaseActivity() {
 
-    // ── UI ────────────────────────────────────────────────────────────────────
     private val messages = mutableListOf<ChatMessage>()
     private lateinit var adapter: ChatAdapter
     private lateinit var recycler: RecyclerView
     private lateinit var etMessage: EditText
     private lateinit var btnSend: FloatingActionButton
 
-    // ── 상태 ──────────────────────────────────────────────────────────────────
     private var conversationId: String? = null
     private var partnerId: String? = null
-    private var lastReadMessageId: String? = null
     private var oldestLoadedMessageId: String? = null
+    private var isHistoryLoading = false
 
-    // ── SharedPreferences ────────────────────────────────────────────────────
-    private val mainPrefs: SharedPreferences by lazy {
-        getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-    }
-    private val chatPrefs: SharedPreferences by lazy {
-        getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE)
-    }
+    private val mainPrefs: SharedPreferences by lazy { getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE) }
+    private val chatPrefs: SharedPreferences by lazy { getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE) }
+
     private val token    get() = mainPrefs.getString("access_token", null)
     private val myUserId get() = mainPrefs.getString("user_id", "")
 
     private val isNightMode: Boolean
-        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
+        get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
-    // ── LocalBroadcast 수신기 ─────────────────────────────────────────────────
+    // 실시간 메시지 수신 리시버
     private val chatReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val content   = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CONTENT) ?: return
             val msgId     = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_ID) ?: ""
             val convId    = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CONV_ID) ?: ""
+            val senderId  = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_SENDER_ID) ?: ""
             val createdAt = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CREATED_AT) ?: ""
 
-            // 현재 열린 대화방 메시지만 표시
-            if (convId.isNotEmpty() && convId != conversationId) return
-
-            val timeStr = isoToHHmm(createdAt)
-            addReceivedMessageUI(content, msgId, timeStr)
-            chatPrefs.edit().putLong(PREF_LAST_MSG_TIME, System.currentTimeMillis()).apply()
-
-            // 읽음 처리
-            val t = token; val cid = conversationId
-            if (t != null && cid != null && msgId.isNotEmpty()) markRead(cid, msgId, t)
+            // 현재 보고 있는 대화방의 메시지인 경우 UI 업데이트
+            if (convId == conversationId) {
+                val isMe = senderId == myUserId
+                if (!isMe) { // 상대방이 보낸 것이라면
+                    addReceivedMessageUI(content, msgId, isoToHHmm(createdAt))
+                    markRead(convId, msgId) // 읽음 처리 알림 전송
+                }
+            }
         }
     }
 
-    // ── 상수 ──────────────────────────────────────────────────────────────────
     companion object {
         private const val TAG = "ChatActivity"
-        private const val PREF_WELCOME_SHOWN = "chat_welcome_shown"
-        private const val PREF_CONV_ID       = "chat_conversation_id"
-        private const val PREF_PARTNER_ID    = "chat_partner_id"
-        private const val PREF_LAST_MSG_TIME = "chat_last_message_time_ms"
-        private const val MSG_PAGE_LIMIT     = 50
-        private const val AUTO_REPLY_MS      = 24L * 60 * 60 * 1000
+        private const val PREF_CONV_ID = "chat_conversation_id"
+        private const val MSG_PAGE_LIMIT = 50
     }
-
-    // =========================================================================
-    // 생명주기
-    // =========================================================================
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
-        applySystemBarsColor()
-        setupToolbar()
-        setupRecycler()
-        setupInput()
 
-        val cachedConvId  = chatPrefs.getString(PREF_CONV_ID, null)
-        val cachedPartner = chatPrefs.getString(PREF_PARTNER_ID, null)
+        setupUI()
 
-        if (cachedConvId != null) {
-            conversationId = cachedConvId
-            partnerId      = cachedPartner
-            fetchMessageHistory(cachedConvId, reset = true)
+        // 1. 기존 대화방 ID가 있는지 확인
+        val cachedId = chatPrefs.getString(PREF_CONV_ID, null)
+        if (cachedId != null) {
+            conversationId = cachedId
+            fetchMessageHistory(cachedId, isFirstLoad = true)
         } else {
+            // 2. 대화방이 없으면 파트너를 찾아 대화방 생성 (POST /chat/conversations)
             fetchPartnersAndOpenConversation()
         }
     }
 
-    override fun onResume() {
-        super.onResume()
+    private fun setupUI() {
         applySystemBarsColor()
-        // 포그라운드 진입 → 서비스에게 알림음 억제 요청
-        ChatWebSocketService.isChatActivityVisible = true
-        // LocalBroadcast 수신 등록
-        LocalBroadcastManager.getInstance(this).registerReceiver(
-            chatReceiver,
-            IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE)
-        )
-    }
 
-    override fun onPause() {
-        super.onPause()
-        // 백그라운드 진입 → 알림음 허용
-        ChatWebSocketService.isChatActivityVisible = false
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(chatReceiver)
-    }
-
-    // =========================================================================
-    // UI 초기화
-    // =========================================================================
-
-    private fun setupToolbar() {
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
         toolbar.setNavigationOnClickListener { finish() }
-    }
 
-    private fun setupRecycler() {
         recycler = findViewById(R.id.recyclerChat)
         adapter  = ChatAdapter(messages)
-        recycler.layoutManager = LinearLayoutManager(this).also { it.stackFromEnd = true }
+        val lm = LinearLayoutManager(this).apply { stackFromEnd = true }
+        recycler.layoutManager = lm
         recycler.adapter = adapter
-    }
 
-    private fun setupInput() {
+        // 상단 스크롤 시 과거 내역 더 불러오기
+        recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                if (!recyclerView.canScrollVertically(-1) && !isHistoryLoading && oldestLoadedMessageId != null) {
+                    conversationId?.let { fetchMessageHistory(it, isFirstLoad = false) }
+                }
+            }
+        })
+
         etMessage = findViewById(R.id.etMessage)
         btnSend   = findViewById(R.id.btnSend)
         btnSend.setOnClickListener {
             val text = etMessage.text.toString().trim()
-            if (text.isEmpty()) return@setOnClickListener
-            if (text.length > 2000) {
-                etMessage.error = "2,000자 이하로 입력해 주세요."
-                return@setOnClickListener
+            if (text.isNotEmpty()) {
+                etMessage.text.clear()
+                sendMessage(text)
             }
-            etMessage.text.clear()
-            sendMessage(text)
         }
     }
 
-    private fun applySystemBarsColor() {
-        val color = if (isNightMode) Color.BLACK else Color.WHITE
-        window.statusBarColor     = color
-        window.navigationBarColor = color
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars     = !isNightMode
-            isAppearanceLightNavigationBars = !isNightMode
-        }
-    }
-
-    // =========================================================================
-    // STEP 1 — 파트너 조회 → 대화방 열기
-    // GET /chat/partners
-    // =========================================================================
-
+    // STEP 1: 파트너 조회 (기사는 관리자, 관리자는 기사 목록)
     private fun fetchPartnersAndOpenConversation() {
-        val t = token ?: run { showWelcomeIfNeeded(); return }
+        val t = token ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = openGet("${Constants.BASE_URL}/chat/partners", t)
+                val conn = openConn("${Constants.BASE_URL}/chat/partners", "GET", t)
                 if (conn.responseCode == 200) {
                     val arr = JSONArray(conn.inputStream.bufferedReader().readText())
                     if (arr.length() > 0) {
-                        val pid = arr.getJSONObject(0).optString("id", "")
-                        if (pid.isNotEmpty()) {
-                            partnerId = pid
-                            chatPrefs.edit().putString(PREF_PARTNER_ID, pid).apply()
-                            openConversationWith(pid, t)
-                            return@launch
-                        }
+                        // 가장 첫 번째 파트너와 대화 시도
+                        val pid = arr.getJSONObject(0).getString("id")
+                        openConversationWith(pid, t)
                     }
                 }
-                withContext(Dispatchers.Main) { showWelcomeIfNeeded() }
-            } catch (e: Exception) {
-                Log.e(TAG, "fetchPartners: ${e.message}")
-                withContext(Dispatchers.Main) { showWelcomeIfNeeded() }
-            }
+            } catch (e: Exception) { Log.e(TAG, "fetchPartners: ${e.message}") }
         }
     }
 
-    // =========================================================================
-    // STEP 2 — 대화방 생성/조회
-    // POST /chat/conversations  body: {"partner_id": "..."}
-    // =========================================================================
-
+    // STEP 2: 대화방 생성 또는 기존방 ID 조회
     private fun openConversationWith(pid: String, t: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/chat/conversations")
-                    .openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Authorization", "Bearer $t")
-                conn.connectTimeout = 8000; conn.readTimeout = 8000
-                conn.doOutput = true
+                val conn = openConn("${Constants.BASE_URL}/chat/conversations", "POST", t, true)
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply { put("partner_id", pid) }.toString())
                 }
-                val code = conn.responseCode
-                if (code in 200..201) {
-                    val convId = JSONObject(conn.inputStream.bufferedReader().readText())
-                        .optString("id", "")
-                    if (convId.isNotEmpty()) {
-                        conversationId = convId
-                        chatPrefs.edit().putString(PREF_CONV_ID, convId).apply()
-                        withContext(Dispatchers.Main) { fetchMessageHistory(convId, reset = true) }
-                        return@launch
-                    }
+                if (conn.responseCode in 200..201) {
+                    val convId = JSONObject(conn.inputStream.bufferedReader().readText()).getString("id")
+                    conversationId = convId
+                    chatPrefs.edit().putString(PREF_CONV_ID, convId).apply()
+                    fetchMessageHistory(convId, isFirstLoad = true)
                 }
-                withContext(Dispatchers.Main) { showWelcomeIfNeeded() }
-            } catch (e: Exception) {
-                Log.e(TAG, "openConversation: ${e.message}")
-                withContext(Dispatchers.Main) { showWelcomeIfNeeded() }
-            }
+            } catch (e: Exception) { Log.e(TAG, "openConversation: ${e.message}") }
         }
     }
 
-    // =========================================================================
-    // STEP 3 — 메시지 히스토리
-    // GET /chat/conversations/{id}/messages?limit=50[&before_message_id=...]
-    // =========================================================================
+    // STEP 3: 메시지 히스토리 가져오기 (오름차순 응답 처리)
+    private fun fetchMessageHistory(convId: String, isFirstLoad: Boolean) {
+        val t = token ?: return
+        if (isHistoryLoading) return
+        isHistoryLoading = true
 
-    private fun fetchMessageHistory(convId: String, reset: Boolean) {
-        val t = token ?: run { if (reset) showWelcomeIfNeeded(); return }
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val url = buildString {
-                    append("${Constants.BASE_URL}/chat/conversations/$convId/messages")
-                    append("?limit=$MSG_PAGE_LIMIT")
-                    if (!reset && oldestLoadedMessageId != null)
+                    append("${Constants.BASE_URL}/chat/conversations/$convId/messages?limit=$MSG_PAGE_LIMIT")
+                    if (!isFirstLoad && oldestLoadedMessageId != null) {
                         append("&before_message_id=$oldestLoadedMessageId")
+                    }
                 }
-                val conn = openGet(url, t)
+                val conn = openConn(url, "GET", t)
                 if (conn.responseCode == 200) {
                     val arr = JSONArray(conn.inputStream.bufferedReader().readText())
-                    withContext(Dispatchers.Main) {
-                        if (reset) renderHistoryReset(arr) else renderHistoryPrepend(arr)
+                    val newMessages = mutableListOf<ChatMessage>()
+                    for (i in 0 until arr.length()) {
+                        parseMessage(arr.getJSONObject(i))?.let { newMessages.add(it) }
                     }
-                    getLastMessageId(arr)?.let { markRead(convId, it, t) }
-                } else {
-                    withContext(Dispatchers.Main) { if (reset) showWelcomeIfNeeded() }
+
+                    withContext(Dispatchers.Main) {
+                        if (isFirstLoad) {
+                            messages.clear()
+                            messages.addAll(newMessages)
+                            adapter.notifyDataSetChanged()
+                            recycler.scrollToPosition(messages.size - 1)
+                        } else {
+                            if (newMessages.isNotEmpty()) {
+                                messages.addAll(0, newMessages)
+                                adapter.notifyItemRangeInserted(0, newMessages.size)
+                            }
+                        }
+                        // 페이징용 ID 업데이트 (배열의 첫 번째가 가장 과거)
+                        if (newMessages.isNotEmpty()) oldestLoadedMessageId = newMessages[0].id
+
+                        // 마지막 메시지 읽음 처리
+                        if (messages.isNotEmpty()) markRead(convId, messages.last().id)
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "fetchHistory: ${e.message}")
-                withContext(Dispatchers.Main) { if (reset) showWelcomeIfNeeded() }
-            }
+            } catch (e: Exception) { Log.e(TAG, "fetchHistory: ${e.message}") }
+            finally { isHistoryLoading = false }
         }
     }
 
-    private fun renderHistoryReset(arr: JSONArray) {
-        messages.clear()
-        var lastMsgMs = 0L
-        for (i in 0 until arr.length()) {
-            parseMessage(arr.getJSONObject(i))?.let { msg ->
-                messages.add(msg)
-                if (msg.timestampMs > lastMsgMs) lastMsgMs = msg.timestampMs
-            }
-        }
-        oldestLoadedMessageId = if (arr.length() > 0) arr.getJSONObject(0).optString("id") else null
-
-        if (messages.isEmpty()) showWelcomeIfNeeded()
-        else {
-            adapter.notifyDataSetChanged()
-            recycler.scrollToPosition(messages.size - 1)
-            checkAndTriggerAutoReply(lastMsgMs)
-        }
-    }
-
-    private fun renderHistoryPrepend(arr: JSONArray) {
-        if (arr.length() == 0) return
-        val prepend = mutableListOf<ChatMessage>()
-        for (i in 0 until arr.length()) parseMessage(arr.getJSONObject(i))?.let { prepend.add(it) }
-        oldestLoadedMessageId = arr.getJSONObject(0).optString("id")
-        messages.addAll(0, prepend)
-        adapter.notifyItemRangeInserted(0, prepend.size)
-        (recycler.layoutManager as? LinearLayoutManager)
-            ?.scrollToPositionWithOffset(prepend.size, 0)
-    }
-
-    private fun parseMessage(obj: JSONObject): ChatMessage? {
-        val content = obj.optString("content", "").trim()
-        if (content.isEmpty()) return null
-        return ChatMessage(
-            id          = obj.optString("id", ""),
-            text        = content,
-            isSent      = obj.optString("sender_id", "") == myUserId,
-            time        = isoToHHmm(obj.optString("created_at", "")),
-            timestampMs = isoToMs(obj.optString("created_at", ""))
-        )
-    }
-
-    private fun getLastMessageId(arr: JSONArray): String? {
-        if (arr.length() == 0) return null
-        return arr.getJSONObject(arr.length() - 1).optString("id").ifEmpty { null }
-    }
-
-    // =========================================================================
-    // 메시지 전송
-    // POST /chat/conversations/{id}/messages  body: {"content": "..."}
-    // =========================================================================
-
+    // 메시지 전송 (POST /chat/conversations/{id}/messages)
     private fun sendMessage(text: String) {
-        val nowMs = System.currentTimeMillis()
-        addSentMessageUI(text, nowMs)
-        chatPrefs.edit().putLong(PREF_LAST_MSG_TIME, nowMs).apply()
+        val cid = conversationId ?: return
+        val t = token ?: return
 
-        val convId = conversationId ?: return
-        val t      = token ?: return
+        // 1. UI 선반영 (Optimistic UI)
+        val tempMsg = ChatMessage("", text, true, nowHHmm(), System.currentTimeMillis())
+        messages.add(tempMsg)
+        adapter.notifyItemInserted(messages.size - 1)
+        recycler.scrollToPosition(messages.size - 1)
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/chat/conversations/$convId/messages")
-                    .openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Authorization", "Bearer $t")
-                conn.connectTimeout = 8000; conn.readTimeout = 8000
-                conn.doOutput = true
+                val conn = openConn("${Constants.BASE_URL}/chat/conversations/$cid/messages", "POST", t, true)
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply { put("content", text) }.toString())
                 }
-                val code = conn.responseCode
-                if (code in 200..201) {
-                    val msgId = JSONObject(conn.inputStream.bufferedReader().readText())
-                        .optString("id", "")
-                    if (msgId.isNotEmpty()) markRead(convId, msgId, t)
+                if (conn.responseCode in 200..201) {
+                    val res = JSONObject(conn.inputStream.bufferedReader().readText())
+                    // 실제 생성된 ID로 워터마크 갱신 가능
+                    markRead(cid, res.optString("id"))
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "sendMessage: ${e.message}")
-            }
+            } catch (e: Exception) { Log.e(TAG, "sendMessage: ${e.message}") }
         }
     }
 
-    // =========================================================================
-    // 읽음 처리
-    // POST /chat/conversations/{id}/read  body: {"last_read_message_id": "..."}
-    // =========================================================================
-
-    private fun markRead(convId: String, lastMsgId: String, t: String) {
-        if (lastMsgId == lastReadMessageId) return
-        lastReadMessageId = lastMsgId
+    // 읽음 처리 (POST /chat/conversations/{id}/read)
+    private fun markRead(cid: String, mid: String) {
+        if (mid.isEmpty()) return
+        val t = token ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/chat/conversations/$convId/read")
-                    .openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.setRequestProperty("Authorization", "Bearer $t")
-                conn.connectTimeout = 5000; conn.readTimeout = 5000
-                conn.doOutput = true
+                val conn = openConn("${Constants.BASE_URL}/chat/conversations/$cid/read", "POST", t, true)
                 OutputStreamWriter(conn.outputStream).use {
-                    it.write(JSONObject().apply {
-                        put("last_read_message_id", lastMsgId)
-                    }.toString())
+                    it.write(JSONObject().apply { put("last_read_message_id", mid) }.toString())
                 }
-                conn.responseCode
+                conn.responseCode // 실행 확인
             } catch (e: Exception) { /* silent */ }
         }
     }
 
     // =========================================================================
-    // 환영 메시지 / 24시간 자동응답
+    // 유틸리티
     // =========================================================================
 
-    private fun showWelcomeIfNeeded() {
-        if (!chatPrefs.getBoolean(PREF_WELCOME_SHOWN, false)) {
-            chatPrefs.edit()
-                .putBoolean(PREF_WELCOME_SHOWN, true)
-                .putLong(PREF_LAST_MSG_TIME, System.currentTimeMillis())
-                .apply()
-            addReceivedMessageUI(getString(R.string.chat_welcome))
-        }
+    private fun parseMessage(obj: JSONObject): ChatMessage? {
+        val content = obj.optString("content", "")
+        if (content.isBlank()) return null
+        val senderId = obj.optString("sender_id")
+        val createdAt = obj.optString("created_at")
+        return ChatMessage(
+            id = obj.optString("id"),
+            text = content,
+            isSent = senderId == myUserId,
+            time = isoToHHmm(createdAt),
+            timestampMs = isoToMs(createdAt)
+        )
     }
 
-    private fun checkAndTriggerAutoReply(lastMsgFromServerMs: Long) {
-        val cachedMs = chatPrefs.getLong(PREF_LAST_MSG_TIME, 0L)
-        val lastMs   = maxOf(lastMsgFromServerMs, cachedMs)
-        if (lastMs == 0L) return
-        if (System.currentTimeMillis() - lastMs >= AUTO_REPLY_MS) {
-            recycler.postDelayed({
-                addReceivedMessageUI(getString(R.string.chat_auto_reply))
-                chatPrefs.edit().putLong(PREF_LAST_MSG_TIME, System.currentTimeMillis()).apply()
-            }, 500)
-        }
-    }
-
-    // =========================================================================
-    // UI 헬퍼
-    // =========================================================================
-
-    private fun addSentMessageUI(text: String, nowMs: Long = System.currentTimeMillis()) {
-        messages.add(ChatMessage(
-            text        = text,
-            isSent      = true,
-            time        = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(nowMs)),
-            timestampMs = nowMs
-        ))
-        adapter.notifyItemInserted(messages.size - 1)
-        recycler.scrollToPosition(messages.size - 1)
-    }
-
-    private fun addReceivedMessageUI(
-        text: String,
-        id: String = "",
-        timeStr: String = nowHHmm()
-    ) {
-        messages.add(ChatMessage(
-            id          = id,
-            text        = text,
-            isSent      = false,
-            time        = timeStr,
-            timestampMs = System.currentTimeMillis()
-        ))
-        adapter.notifyItemInserted(messages.size - 1)
-        recycler.scrollToPosition(messages.size - 1)
-    }
-
-    // =========================================================================
-    // 네트워크 유틸
-    // =========================================================================
-
-    private fun openGet(url: String, t: String): HttpURLConnection =
-        (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
+    private fun openConn(url: String, method: String, t: String, doOut: Boolean = false): HttpURLConnection {
+        return (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
             setRequestProperty("Authorization", "Bearer $t")
-            connectTimeout = 8000; readTimeout = 8000
+            if (doOut) {
+                setRequestProperty("Content-Type", "application/json")
+                doOutput = true
+            }
+            connectTimeout = 8000
+            readTimeout = 8000
         }
+    }
 
-    // =========================================================================
-    // 시간 유틸
-    // =========================================================================
+    private fun addReceivedMessageUI(text: String, id: String, time: String) {
+        runOnUiThread {
+            messages.add(ChatMessage(id, text, false, time, System.currentTimeMillis()))
+            adapter.notifyItemInserted(messages.size - 1)
+            recycler.smoothScrollToPosition(messages.size - 1)
+        }
+    }
 
-    private val ISO_FORMATS = listOf(
-        "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
-        "yyyy-MM-dd'T'HH:mm:ss.SSS",
-        "yyyy-MM-dd'T'HH:mm:ss",
-        "yyyy-MM-dd HH:mm:ss"
-    )
+    private fun applySystemBarsColor() {
+        val color = if (isNightMode) Color.BLACK else Color.WHITE
+        window.statusBarColor = color
+        window.navigationBarColor = color
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !isNightMode
+            isAppearanceLightNavigationBars = !isNightMode
+        }
+    }
+
+    private fun nowHHmm() = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
 
     private fun isoToHHmm(iso: String): String {
-        if (iso.isEmpty()) return nowHHmm()
-        for (fmt in ISO_FORMATS) {
-            try {
-                val date = SimpleDateFormat(fmt, Locale.getDefault()).parse(iso) ?: continue
-                return SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)
-            } catch (_: Exception) { }
-        }
-        return nowHHmm()
+        return try {
+            val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.KOREA).parse(iso)
+            SimpleDateFormat("HH:mm", Locale.KOREA).format(date!!)
+        } catch (e: Exception) { nowHHmm() }
     }
 
     private fun isoToMs(iso: String): Long {
-        if (iso.isEmpty()) return 0L
-        for (fmt in ISO_FORMATS) {
-            try { return SimpleDateFormat(fmt, Locale.getDefault()).parse(iso)?.time ?: continue }
-            catch (_: Exception) { }
-        }
-        return 0L
+        return try {
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.KOREA).parse(iso)?.time ?: 0L
+        } catch (e: Exception) { 0L }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ChatWebSocketService.isChatActivityVisible = true
+        LocalBroadcastManager.getInstance(this).registerReceiver(chatReceiver, IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE))
+    }
+
+    override fun onPause() {
+        super.onPause()
+        ChatWebSocketService.isChatActivityVisible = false
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(chatReceiver)
     }
 
     // =========================================================================
-    // RecyclerView Adapter
+    // Adapter
     // =========================================================================
-
-    inner class ChatAdapter(private val list: MutableList<ChatMessage>)
-        : RecyclerView.Adapter<ChatAdapter.VH>() {
-
-        inner class VH(view: View) : RecyclerView.ViewHolder(view) {
-            val layoutSent: LinearLayout     = view.findViewById(R.id.layoutSent)
-            val layoutReceived: LinearLayout = view.findViewById(R.id.layoutReceived)
-            val tvSent: TextView             = view.findViewById(R.id.tvMessageSent)
-            val tvReceived: TextView         = view.findViewById(R.id.tvMessageReceived)
-            val tvTimeSent: TextView         = view.findViewById(R.id.tvTimeSent)
-            val tvTimeReceived: TextView     = view.findViewById(R.id.tvTimeReceived)
+    inner class ChatAdapter(private val list: List<ChatMessage>) : RecyclerView.Adapter<ChatAdapter.VH>() {
+        inner class VH(v: View) : RecyclerView.ViewHolder(v) {
+            val lSent: LinearLayout = v.findViewById(R.id.layoutSent)
+            val lRecv: LinearLayout = v.findViewById(R.id.layoutReceived)
+            val tSent: TextView = v.findViewById(R.id.tvMessageSent)
+            val tRecv: TextView = v.findViewById(R.id.tvMessageReceived)
+            val tmSent: TextView = v.findViewById(R.id.tvTimeSent)
+            val tmRecv: TextView = v.findViewById(R.id.tvTimeReceived)
         }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
-            VH(LayoutInflater.from(parent.context)
-                .inflate(R.layout.item_chat_message, parent, false))
-
+        override fun onCreateViewHolder(p: ViewGroup, vt: Int) = VH(LayoutInflater.from(p.context).inflate(R.layout.item_chat_message, p, false))
         override fun getItemCount() = list.size
-
-        override fun onBindViewHolder(holder: VH, position: Int) {
-            val msg = list[position]
-            if (msg.isSent) {
-                holder.layoutSent.visibility     = View.VISIBLE
-                holder.layoutReceived.visibility = View.GONE
-                holder.tvSent.text               = msg.text
-                holder.tvTimeSent.text           = msg.time
+        override fun onBindViewHolder(h: VH, p: Int) {
+            val m = list[p]
+            if (m.isSent) {
+                h.lSent.visibility = View.VISIBLE; h.lRecv.visibility = View.GONE
+                h.tSent.text = m.text; h.tmSent.text = m.time
             } else {
-                holder.layoutSent.visibility     = View.GONE
-                holder.layoutReceived.visibility = View.VISIBLE
-                holder.tvReceived.text           = msg.text
-                holder.tvTimeReceived.text       = msg.time
+                h.lSent.visibility = View.GONE; h.lRecv.visibility = View.VISIBLE
+                h.tRecv.text = m.text; h.tmRecv.text = m.time
             }
         }
     }
