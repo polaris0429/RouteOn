@@ -79,6 +79,10 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import android.content.ComponentName
+import android.net.Uri
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 
 data class RouteStop(
     val id: String, val name: String,
@@ -189,6 +193,50 @@ class MainActivity : BaseActivity(),
         checkLocationPermission()
         connectWebSocket()
         refreshHandler.post(refreshRunnable)
+        checkSpecialPermissions()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ANSWER_PHONE_CALLS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ANSWER_PHONE_CALLS, Manifest.permission.READ_PHONE_STATE), 100)
+        }
+    }
+
+    // MainActivity 클래스 내부의 적절한 위치에 넣으세요.
+    private fun checkSpecialPermissions() {
+        val isNotificationEnabled = isNotificationServiceEnabled()
+        val isOverlayEnabled = Settings.canDrawOverlays(this)
+
+        // 권한이 하나라도 없는 경우에만 팝업 실행
+        if (!isNotificationEnabled || !isOverlayEnabled) {
+            AlertDialog.Builder(this)
+                .setTitle("필수 권한 설정 안내")
+                .setMessage("전화 제어 기능을 사용하려면 아래 두 권한이 반드시 필요합니다.\n\n1. 알림 접근 권한 (RouteOn 허용)\n2. 다른 앱 위에 표시 (RouteOn 허용)")
+                .setPositiveButton("설정하러 가기") { _, _ ->
+                    if (!isNotificationEnabled) {
+                        startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                    } else {
+                        // 오버레이 권한 설정창으로 직접 이동
+                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                        startActivity(intent)
+                    }
+                }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
+    private fun isNotificationServiceEnabled(): Boolean {
+        val pkgName = packageName
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        if (!flat.isNullOrEmpty()) {
+            val names = flat.split(":")
+            for (name in names) {
+                val cn = ComponentName.unflattenFromString(name)
+                if (cn != null && cn.packageName == pkgName) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private fun applySystemBarsColor() {
