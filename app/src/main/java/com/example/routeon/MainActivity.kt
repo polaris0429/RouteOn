@@ -2,6 +2,7 @@ package com.example.routeon
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,6 +13,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -19,6 +21,7 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.Button
@@ -79,27 +82,22 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import android.content.ComponentName
-import android.net.Uri
-import android.provider.Settings
-import androidx.core.app.NotificationManagerCompat
 
 data class RouteStop(
     val id: String, val name: String,
     val lat: Double, val lng: Double,
-    /** "loading" | "unloading" | "waypoint" | "rest_stop" | "destination" */
     val type: String
 )
 
 class MainActivity : BaseActivity(),
     KNGuidance_GuideStateDelegate, KNGuidance_LocationGuideDelegate,
-    KNGuidance_RouteGuideDelegate,  KNGuidance_SafetyGuideDelegate,
-    KNGuidance_VoiceGuideDelegate,  KNGuidance_CitsGuideDelegate,
+    KNGuidance_RouteGuideDelegate, KNGuidance_SafetyGuideDelegate,
+    KNGuidance_VoiceGuideDelegate, KNGuidance_CitsGuideDelegate,
     SensorEventListener {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var naviView: KNNaviView
-    private val locationPermissionRequestCode = 1000
+    private val permissionRequestCode = 1000
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
@@ -129,6 +127,9 @@ class MainActivity : BaseActivity(),
 
     private val knownTripStatuses = mutableMapOf<String, String>()
     private var isFirstFetch = true
+
+    // ✅ 다이얼로그 중복/누수 방지 변수
+    private var permissionDialog: AlertDialog? = null
 
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -161,7 +162,7 @@ class MainActivity : BaseActivity(),
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        lightSensor   = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
+        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
 
         val bsb = BottomSheetBehavior.from(binding.bottomSheet)
         bottomSheetBehavior = bsb
@@ -177,50 +178,95 @@ class MainActivity : BaseActivity(),
             override fun onSlide(bottomSheet: View, slideOffset: Float) { applySystemBarsColor() }
         })
 
-        binding.btnSettings.setOnClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }
-        binding.btnHelp.setOnClickListener {
-            startActivity(Intent(this, HelpActivity::class.java))
-        }
-        binding.btnChat.setOnClickListener {
-            startActivity(Intent(this, ChatActivity::class.java))
-        }
-        binding.btnTripHistory.setOnClickListener {
-            startActivity(Intent(this, TripHistoryActivity::class.java))
-        }
+        binding.btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        binding.btnHelp.setOnClickListener { startActivity(Intent(this, HelpActivity::class.java)) }
+        binding.btnChat.setOnClickListener { startActivity(Intent(this, ChatActivity::class.java)) }
+        binding.btnTripHistory.setOnClickListener { startActivity(Intent(this, TripHistoryActivity::class.java)) }
 
-        checkLocationPermission()
         connectWebSocket()
         refreshHandler.post(refreshRunnable)
-        checkSpecialPermissions()
 
+        // ✅ 앱 시작 시 기본 권한부터 한 번에 요청
+        requestAllBasicPermissions()
+    }
+
+    // ✅ 기본 권한(위치, 전화) 통합 요청
+    private fun requestAllBasicPermissions() {
+        val permissionsToRequest = mutableListOf<String>()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            permissionsToRequest.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ANSWER_PHONE_CALLS) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ANSWER_PHONE_CALLS, Manifest.permission.READ_PHONE_STATE), 100)
+            permissionsToRequest.add(Manifest.permission.ANSWER_PHONE_CALLS)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, permissionsToRequest.toTypedArray(), permissionRequestCode)
+        } else {
+            // 모든 기본 권한이 이미 허용되어 있다면 내비게이션 초기화 및 특수 권한 체크
+            initKakaoNaviSDK()
+            startLocationUpdates()
+            checkSpecialPermissions()
         }
     }
 
-    // MainActivity 클래스 내부의 적절한 위치에 넣으세요.
+    // ✅ 권한 응답 결과 처리
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == permissionRequestCode) {
+            var locationGranted = false
+            for (i in permissions.indices) {
+                if (permissions[i] == Manifest.permission.ACCESS_FINE_LOCATION && grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+                    locationGranted = true
+                }
+            }
+
+            if (locationGranted) {
+                initKakaoNaviSDK()
+                startLocationUpdates()
+                // 위치 등 기본 권한을 받았으면 특수 권한(오버레이 등) 체크를 이어서 진행
+                checkSpecialPermissions()
+            } else {
+                Toast.makeText(this, getString(R.string.navi_location_permission), Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+    }
+
+    // ✅ 오버레이 및 알림 접근 권한 팝업 제어
     private fun checkSpecialPermissions() {
+        if (isFinishing || isDestroyed) return
+
         val isNotificationEnabled = isNotificationServiceEnabled()
         val isOverlayEnabled = Settings.canDrawOverlays(this)
 
-        // 권한이 하나라도 없는 경우에만 팝업 실행
         if (!isNotificationEnabled || !isOverlayEnabled) {
-            AlertDialog.Builder(this)
+            if (permissionDialog?.isShowing == true) return
+
+            permissionDialog = AlertDialog.Builder(this)
                 .setTitle("필수 권한 설정 안내")
                 .setMessage("전화 제어 기능을 사용하려면 아래 두 권한이 반드시 필요합니다.\n\n1. 알림 접근 권한 (RouteOn 허용)\n2. 다른 앱 위에 표시 (RouteOn 허용)")
                 .setPositiveButton("설정하러 가기") { _, _ ->
                     if (!isNotificationEnabled) {
                         startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
                     } else {
-                        // 오버레이 권한 설정창으로 직접 이동
                         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
                         startActivity(intent)
                     }
                 }
                 .setCancelable(false)
-                .show()
+                .create()
+
+            permissionDialog?.show()
+        } else {
+            permissionDialog?.dismiss()
+            permissionDialog = null
         }
     }
 
@@ -241,10 +287,10 @@ class MainActivity : BaseActivity(),
 
     private fun applySystemBarsColor() {
         val barColor = if (isNightMode) Color.BLACK else Color.WHITE
-        window.statusBarColor     = barColor
+        window.statusBarColor = barColor
         window.navigationBarColor = barColor
         val ic = WindowInsetsControllerCompat(window, window.decorView)
-        ic.isAppearanceLightStatusBars     = !isNightMode
+        ic.isAppearanceLightStatusBars = !isNightMode
         ic.isAppearanceLightNavigationBars = !isNightMode
     }
 
@@ -252,8 +298,8 @@ class MainActivity : BaseActivity(),
         super.onConfigurationChanged(newConfig)
         val isDark = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         if (::naviView.isInitialized) naviView.useDarkMode = isDark
-        val bgColor     = ResourcesCompat.getColor(resources, R.color.bg_bottom_sheet, theme)
-        val textColor   = ResourcesCompat.getColor(resources, R.color.text_primary, theme)
+        val bgColor = ResourcesCompat.getColor(resources, R.color.bg_bottom_sheet, theme)
+        val textColor = ResourcesCompat.getColor(resources, R.color.text_primary, theme)
         val handleColor = ResourcesCompat.getColor(resources, R.color.drag_handle, theme)
         binding.bottomSheet.setBackgroundColor(bgColor)
         binding.bottomSheet.getChildAt(0)?.setBackgroundColor(handleColor)
@@ -267,8 +313,14 @@ class MainActivity : BaseActivity(),
         fetchTrips()
         applySystemBarsColor()
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-        if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null)
+        if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null) {
             sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
+        }
+
+        // 앱으로 돌아왔을 때, 기본 위치 권한이 있다면 특수 권한 팝업 진행 여부 확인
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            checkSpecialPermissions()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -279,6 +331,25 @@ class MainActivity : BaseActivity(),
     override fun onPause() {
         super.onPause()
         sensorManager.unregisterListener(this)
+
+        // 🚨 화면 넘어갈 때 메모리 누수(WindowLeaked) 방지
+        permissionDialog?.dismiss()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        refreshHandler.removeCallbacks(refreshRunnable)
+        webSocket?.cancel()
+        sensorManager.unregisterListener(this)
+
+        // 🚨 액티비티 파괴 시 팝업 닫기
+        permissionDialog?.dismiss()
+        permissionDialog = null
+
+        // 🚨 위치 콜백 초기화 전에 호출하면 죽는 에러 방지
+        if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized) {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
@@ -330,7 +401,7 @@ class MainActivity : BaseActivity(),
                 if (conn.responseCode in 200..204) {
                     withContext(Dispatchers.Main) {
                         val msg = if (status == "completed") getString(R.string.navi_trip_completed)
-                                  else getString(R.string.navi_trip_cancelled)
+                        else getString(R.string.navi_trip_cancelled)
                         Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                         if (status == "completed" || status == "cancelled") {
                             KNSDK.sharedGuidance()?.stop()
@@ -370,7 +441,6 @@ class MainActivity : BaseActivity(),
         }
     }
 
-    // ── [변경] loading/unloading/destination 타입별 버튼 구분 ─────────────────
     private fun checkProximityToStops(currentLat: Double, currentLng: Double) {
         var nearbyStop: RouteStop? = null
         for (stop in currentStops) {
@@ -391,7 +461,6 @@ class MainActivity : BaseActivity(),
                         }
                     }
                     "loading" -> {
-                        // 상차지 완료
                         binding.btnCompleteTrip.text = "🚛 상차 완료 (${nearbyStop.name})"
                         binding.btnCompleteTrip.backgroundTintList =
                             android.content.res.ColorStateList.valueOf(Color.parseColor("#E65100"))
@@ -400,7 +469,6 @@ class MainActivity : BaseActivity(),
                         }
                     }
                     else -> {
-                        // unloading / waypoint / rest_stop → 하차·배송 완료
                         binding.btnCompleteTrip.text =
                             "${getString(R.string.navi_btn_complete_delivery)} (${nearbyStop.name})"
                         binding.btnCompleteTrip.backgroundTintList =
@@ -457,7 +525,6 @@ class MainActivity : BaseActivity(),
         })
     }
 
-    // ── [변경] remaining_waypoints에 type 필드 보존 + _resolve_dest 동일 로직 ─
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, wps: JSONArray) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
@@ -471,7 +538,6 @@ class MainActivity : BaseActivity(),
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.connectTimeout = 30000; conn.readTimeout = 30000; conn.doOutput = true
 
-                // 목적지 결정: 마지막 unloading → 마지막 loading → 마지막 waypoint 순 (_resolve_dest와 동일)
                 var dName = "목적지"; var dLat = 0.0; var dLon = 0.0
                 val rem = JSONArray()
 
@@ -496,7 +562,6 @@ class MainActivity : BaseActivity(),
                     dLat  = destWp.optDouble("lat")
                     dLon  = destWp.optDouble("lon")
 
-                    // 나머지 경유지: type 필드 포함해서 전달
                     for (i in 0 until wps.length()) {
                         if (i == destIdx) continue
                         val wp = wps.getJSONObject(i)
@@ -576,7 +641,6 @@ class MainActivity : BaseActivity(),
         renderRunList(jsonArray)
     }
 
-    // ── [변경] nullable dest_* 처리 + loading_count/unloading_count 표시 ─────
     @SuppressLint("SetTextI18n", "MissingPermission")
     private fun renderRunList(jsonArray: JSONArray) {
         val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
@@ -600,17 +664,13 @@ class MainActivity : BaseActivity(),
 
         activeItems.forEachIndexed { index, obj ->
             val tripId = obj.optString("id", "")
-
-            // ── dest_* nullable 처리 ──────────────────────────────────────────
             val rawDestName = obj.optString("dest_name", "")
             val rawDestLat  = obj.optDouble("dest_lat", 0.0)
             val rawDestLon  = obj.optDouble("dest_lon", 0.0)
 
-            // loading_count / unloading_count (백엔드 신규 필드)
             val loadingCount   = obj.optInt("loading_count", 0)
             val unloadingCount = obj.optInt("unloading_count", 0)
 
-            // 화면 표시 이름: dest_name 우선, 없으면 상차/하차 건수로 표시
             val displayName = rawDestName.takeIf { it.isNotEmpty() } ?: run {
                 val parts = mutableListOf<String>()
                 if (loadingCount > 0)   parts.add("상차지 ${loadingCount}건")
@@ -631,7 +691,6 @@ class MainActivity : BaseActivity(),
                 setTypeface(null, android.graphics.Typeface.BOLD); setTextColor(titleColor)
             })
 
-            // dest_name 있을 때 상차/하차 건수 부제목 추가
             if (rawDestName.isNotEmpty() && (loadingCount > 0 || unloadingCount > 0)) {
                 itemLayout.addView(TextView(this).apply {
                     val parts = mutableListOf<String>()
@@ -653,7 +712,6 @@ class MainActivity : BaseActivity(),
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             }
 
-            // 취소 버튼
             btnLayout.addView(Button(this).apply {
                 text = getString(R.string.navi_btn_cancel_trip)
                 layoutParams = LinearLayout.LayoutParams(
@@ -673,7 +731,6 @@ class MainActivity : BaseActivity(),
                 }
             })
 
-            // 출발 버튼 — origin optional: GPS 있으면 포함, 없으면 백엔드 Redis 폴백
             btnLayout.addView(Button(this).apply {
                 text = getString(R.string.navi_btn_start)
                 layoutParams = LinearLayout.LayoutParams(
@@ -689,7 +746,6 @@ class MainActivity : BaseActivity(),
                             loc?.latitude, loc?.longitude
                         )
                     }.addOnFailureListener {
-                        // GPS 취득 실패 → origin 없이 호출 (백엔드 Redis 폴백)
                         optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, null, null)
                     }
                 }
@@ -720,7 +776,6 @@ class MainActivity : BaseActivity(),
         }
     }
 
-    // ── [변경] origin_* Optional 지원 + nullable dest 처리 ───────────────────
     private fun optimizeAndStartNavi(
         tripId: String, destName: String, destLat: Double, destLng: Double,
         currentLat: Double?, currentLng: Double?
@@ -739,7 +794,6 @@ class MainActivity : BaseActivity(),
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply {
                         put("trip_id", tripId)
-                        // origin_* Optional — GPS 있을 때만 포함, 없으면 백엔드가 Redis에서 폴백
                         if (currentLat != null && currentLng != null) {
                             put("origin_name", "현재 위치")
                             put("origin_lat",  currentLat)
@@ -775,7 +829,6 @@ class MainActivity : BaseActivity(),
         }
     }
 
-    // ── [변경] loading/unloading/node_type 처리 + destination 자동 승격 ──────
     private suspend fun parseAndStartNavi(
         jsonResponse: JSONObject, currentLat: Double, currentLng: Double,
         fallbackDestName: String, fallbackLat: Double, fallbackLng: Double
@@ -791,13 +844,9 @@ class MainActivity : BaseActivity(),
 
             for (i in 0 until arr.length()) {
                 val pt = arr.getJSONObject(i)
-
-                // type: "origin"|"loading"|"unloading"|"waypoint"|"rest_stop"|"destination"
-                // node_type: 백엔드가 loading/unloading 구분을 위해 추가한 별도 필드
                 val rawType  = pt.optString("type", "")
                 val nodeType = pt.optString("node_type", "")
 
-                // effectiveType: node_type 우선, 없으면 type 사용
                 val effectiveType = when {
                     nodeType.isNotEmpty() -> nodeType
                     rawType in listOf("loading", "unloading") -> rawType
@@ -809,24 +858,19 @@ class MainActivity : BaseActivity(),
                 val lng  = pt.optDouble("lon", pt.optDouble("lng", 0.0))
                 val did  = pt.optString("delivery_id", pt.optString("id", ""))
 
-                // 도착 감지 대상: origin 제외 모든 지점
                 if (rawType != "origin") {
                     currentStops.add(RouteStop(did, name, lat, lng, effectiveType))
                 }
 
-                // KNSDK 경유지/목적지 분류
                 when (rawType) {
                     "loading", "unloading", "waypoint", "rest_stop" ->
                         convertWGS84ToKATEC(lat, lng)?.let {
                             vias.add(KNPOI(name, it.first, it.second, ""))
                         }
                     "destination" -> { fName = name; fLat = lat; fLng = lng }
-                    // "origin" 무시
                 }
             }
 
-            // destination 노드가 없는 경우(백엔드가 waypoints 내부에서 자동 결정한 경우):
-            // currentStops 마지막 항목을 destination으로 승격
             if (currentStops.none { it.type == "destination" } && currentStops.isNotEmpty()) {
                 val last = currentStops.last()
                 currentStops[currentStops.lastIndex] = last.copy(type = "destination")
@@ -986,41 +1030,11 @@ class MainActivity : BaseActivity(),
         }
     }
 
-    private fun checkLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED)
-            ActivityCompat.requestPermissions(this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                locationPermissionRequestCode)
-        else { initKakaoNaviSDK(); startLocationUpdates() }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == locationPermissionRequestCode
-            && grantResults.isNotEmpty()
-            && grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) { initKakaoNaviSDK(); startLocationUpdates() }
-        else {
-            Toast.makeText(this, getString(R.string.navi_location_permission), Toast.LENGTH_LONG).show()
-            finish()
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        refreshHandler.removeCallbacks(refreshRunnable)
-        webSocket?.cancel()
-        sensorManager.unregisterListener(this)
-        if (::fusedLocationClient.isInitialized)
-            fusedLocationClient.removeLocationUpdates(locationCallback)
-    }
-
     private fun initKakaoNaviSDK() {
         val prefs    = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         val langCode = prefs.getString("language", "ko") ?: "ko"
         val knLang   = if (langCode == "en") KNLanguageType.KNLanguageType_ENGLISH
-                       else KNLanguageType.KNLanguageType_KOREAN
+        else KNLanguageType.KNLanguageType_KOREAN
         KNSDK.initializeWithAppKey(
             aAppKey        = "b57bc6d46e97f480deecdd3a8e4cd754",
             aClientVersion = "1.0",
@@ -1077,7 +1091,7 @@ class MainActivity : BaseActivity(),
     override fun guidanceOutOfRoute(aGuidance: KNGuidance) {
         if (::naviView.isInitialized) naviView.guidanceOutOfRoute(aGuidance) }
     override fun guidanceRouteChanged(aGuidance: KNGuidance, f: KNRoute, fl: KNLocation,
-                                       t: KNRoute, tl: KNLocation, r: KNGuideRouteChangeReason) {}
+                                      t: KNRoute, tl: KNLocation, r: KNGuideRouteChangeReason) {}
     override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) {
         if (::naviView.isInitialized) naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo) }
     override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {}
