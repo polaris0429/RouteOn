@@ -151,6 +151,12 @@ class MainActivity : BaseActivity(),
         } catch (_: Exception) { }
     }
 
+    // ✅ 마지막 위치 저장 변수 (Replan 시 lastLocation이 null일 때 대비)
+    private var lastLat: Double = 0.0
+    private var lastLng: Double = 0.0
+
+    private var isLocationWsReconnecting = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -485,29 +491,58 @@ class MainActivity : BaseActivity(),
         }
     }
 
+    // ✅ WebSocket 수정 부분 (Ping 유지 및 lastLocation 안전장치 추가)
     private fun connectWebSocket() {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
+
+        val wsClient = httpClient.newBuilder()
+            .pingInterval(20, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
         val request = Request.Builder()
             .url("${Constants.WS_URL}/ws/location")
             .addHeader("Authorization", "Bearer $token").build()
-        webSocket = httpClient.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) { Log.d("WS", "연결") }
+
+        webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.d("LocationWS", "✅ 위치 웹소켓 연결 성공")
+                isLocationWsReconnecting = false
+            }
+
             @SuppressLint("MissingPermission")
             override fun onMessage(webSocket: WebSocket, text: String) {
+                Log.d("LocationWS", "📩 수신된 웹소켓 메시지: $text") // ← 이 로그가 찍히는지 꼭 확인하세요
                 try {
                     val json = JSONObject(text)
                     if (json.optString("type") == "replan_requested") {
                         val message = json.optString("message", getString(R.string.navi_replan_title))
                         val tripId  = json.optString("trip_id")
                         val wps     = json.optJSONArray("waypoints") ?: JSONArray()
+
                         runOnUiThread {
+                            if (isFinishing || isDestroyed) return@runOnUiThread
+
                             AlertDialog.Builder(this@MainActivity)
                                 .setTitle(getString(R.string.navi_replan_title))
                                 .setMessage(message)
                                 .setPositiveButton(getString(R.string.navi_replan_confirm)) { _, _ ->
+                                    // 위치를 못 가져오면 저장해둔 lastLat, lastLng 사용
                                     fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                                        if (loc != null) requestReplan(tripId, loc.latitude, loc.longitude, wps)
+                                        val lat = loc?.latitude ?: lastLat
+                                        val lng = loc?.longitude ?: lastLng
+
+                                        if (lat != 0.0 && lng != 0.0) {
+                                            requestReplan(tripId, lat, lng, wps)
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "현재 위치를 확인할 수 없습니다.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }.addOnFailureListener {
+                                        if (lastLat != 0.0 && lastLng != 0.0) {
+                                            requestReplan(tripId, lastLat, lastLng, wps)
+                                        } else {
+                                            Toast.makeText(this@MainActivity, "현재 위치를 확인할 수 없습니다.", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }.setCancelable(false).show()
                         }
@@ -521,15 +556,55 @@ class MainActivity : BaseActivity(),
                             }
                         }
                     }
-                } catch (e: Exception) { }
+                } catch (e: Exception) {
+                    Log.e("LocationWS", "❌ 메시지 파싱 오류: ${e.message}")
+                }
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w("LocationWS", "⚠️ 웹소켓 닫힘: $reason")
+                scheduleWsReconnect()
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                try {
+                    Log.e("LocationWS", "❌ 웹소켓 에러: ${t.message}")
+                    Log.e("LocationWS", "❌ response: ${response?.code} ${response?.message}")
+
+                    val bodyText = try {
+                        response?.peekBody(Long.MAX_VALUE)?.string()
+                    } catch (e: Exception) {
+                        "body read fail: ${e.message}"
+                    }
+
+                    Log.e("LocationWS", "❌ body: $bodyText")
+
+                } catch (e: Exception) {
+                    Log.e("LocationWS", "❌ onFailure 내부 오류: ${e.message}")
+                }
+
+                scheduleWsReconnect()
             }
         })
     }
 
+    private fun scheduleWsReconnect() {
+        if (isLocationWsReconnecting) return
+        isLocationWsReconnecting = true
+        Log.d("LocationWS", "🔄 3초 후 위치 웹소켓 재연결 시도...")
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            isLocationWsReconnecting = false
+            connectWebSocket()
+        }, 3000)
+    }
+
+    // ✅ Replan 요청 로직 수정 (lon / lng 예외 처리)
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, wps: JSONArray) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
         Toast.makeText(this, getString(R.string.navi_replanning), Toast.LENGTH_LONG).show()
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = URL("${Constants.BASE_URL}/optimize/replan")
@@ -559,17 +634,18 @@ class MainActivity : BaseActivity(),
                     if (destIdx == -1) destIdx = wps.length() - 1
 
                     val destWp = wps.getJSONObject(destIdx)
-                    dName = destWp.optString("name")
-                    dLat  = destWp.optDouble("lat")
-                    dLon  = destWp.optDouble("lon")
+                    dName = destWp.optString("name", "목적지")
+                    dLat  = destWp.optDouble("lat", 0.0)
+                    // lon 우선, 없으면 lng 사용
+                    dLon  = destWp.optDouble("lon", destWp.optDouble("lng", 0.0))
 
                     for (i in 0 until wps.length()) {
                         if (i == destIdx) continue
                         val wp = wps.getJSONObject(i)
                         rem.put(JSONObject().apply {
-                            put("name", wp.optString("name"))
-                            put("lat",  wp.optDouble("lat"))
-                            put("lon",  wp.optDouble("lon"))
+                            put("name", wp.optString("name", "경유지"))
+                            put("lat",  wp.optDouble("lat", 0.0))
+                            put("lon",  wp.optDouble("lon", wp.optDouble("lng", 0.0)))
                             val t = wp.optString("type", "")
                             if (t.isNotEmpty()) put("type", t)
                         })
@@ -585,13 +661,18 @@ class MainActivity : BaseActivity(),
                         put("is_emergency", true); put("route_mode", "auto")
                     }.toString())
                 }
-                if (conn.responseCode in 200..201)
-                    parseAndStartNavi(JSONObject(conn.inputStream.bufferedReader().readText()),
-                        currentLat, currentLng, dName, dLat, dLon)
-                else withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, getString(R.string.navi_optimize_fail), Toast.LENGTH_SHORT).show()
+
+                if (conn.responseCode in 200..201) {
+                    val responseBody = conn.inputStream.bufferedReader().readText()
+                    parseAndStartNavi(JSONObject(responseBody), currentLat, currentLng, dName, dLat, dLon)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, getString(R.string.navi_optimize_fail), Toast.LENGTH_SHORT).show()
+                    }
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                Log.e("Replan", "Replan API Error: ${e.message}")
+            }
         }
     }
 
@@ -1191,6 +1272,9 @@ class MainActivity : BaseActivity(),
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.lastLocation?.let { loc ->
+                    lastLat = loc.latitude
+                    lastLng = loc.longitude
+
                     sendLocationToServer(loc.latitude, loc.longitude, loc.speed)
                     checkProximityToStops(loc.latitude, loc.longitude)
                 }

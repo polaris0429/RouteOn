@@ -2,7 +2,10 @@ package com.example.routeon
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
@@ -20,6 +23,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,13 +35,27 @@ import java.net.URL
 
 /**
  * 모든 Activity 공통 부모.
- * 개발자 모드가 켜지면 드래그 가능한 동그란 스패너 FAB + 슬라이드 메뉴가 모든 화면에 표시됩니다.
+ * 1. 앱 전역에서 웹소켓 서비스를 유지하고 글로벌 메시지 수신 알림을 처리합니다.
+ * 2. 개발자 모드가 켜지면 드래그 가능한 동그란 스패너 FAB + 슬라이드 메뉴가 표시됩니다.
  */
 abstract class BaseActivity : AppCompatActivity() {
 
     private var devFab: ImageButton? = null
-    private var devMenuContainer: LinearLayout? = null   // FAB 위에 떠있는 메뉴 컨테이너
+    private var devMenuContainer: LinearLayout? = null
     private var menuVisible = false
+
+    // 글로벌 채팅 수신 리시버: 채팅방 밖에 있을 때 메시지가 오면 알림(Toast)을 띄움
+    private val globalChatReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // 채팅방(ChatActivity)이 켜져 있으면 여기서 알림을 띄우지 않음
+            if (ChatWebSocketService.isChatActivityVisible) return
+
+            val content = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CONTENT) ?: ""
+            if (content.isNotEmpty()) {
+                Toast.makeText(this@BaseActivity, "💬 새 메시지: $content", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // ─── 생명주기 ─────────────────────────────────────────────────────────────
 
@@ -47,7 +65,18 @@ abstract class BaseActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        syncDevFab()
+        // 앱이 포그라운드에 있는 동안 웹소켓 서비스 상시 가동
+        ChatWebSocketService.start(this)
+
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            globalChatReceiver,
+            IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE)
+        )
+    }
+
+    override fun onPause() {
+        super.onPause()
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(globalChatReceiver)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -73,10 +102,9 @@ abstract class BaseActivity : AppCompatActivity() {
         val fabSize   = (56 * density).toInt()
         val margin    = (16 * density).toInt()
 
-        // ── 동그란 FAB ─────────────────────────────────────────────────────
         val btn = ImageButton(this).apply {
             setImageDrawable(ContextCompat.getDrawable(this@BaseActivity, R.drawable.ic_wrench))
-            setBackgroundResource(R.drawable.bg_dev_fab)           // 동그란 반투명 배경
+            setBackgroundResource(R.drawable.bg_dev_fab)
             contentDescription = "개발자 메뉴"
             scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
             imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
@@ -93,12 +121,10 @@ abstract class BaseActivity : AppCompatActivity() {
             rightMargin  = margin
         }
 
-        // ── 메뉴 컨테이너 (FAB 왼쪽 위에 절대 위치로 붙임) ─────────────────
         val menuLayout = buildMenuLayout(density)
         menuLayout.visibility = View.GONE
         menuLayout.elevation  = 10 * density
 
-        // ── 드래그 & 클릭 ──────────────────────────────────────────────────
         var lastRawX      = 0f
         var lastRawY      = 0f
         var isDragging    = false
@@ -125,7 +151,6 @@ abstract class BaseActivity : AppCompatActivity() {
                         lp.rightMargin  = (scrW - event.rawX - view.width  / 2).toInt().coerceIn(0, scrW - view.width)
                         lp.bottomMargin = (scrH - event.rawY - view.height / 2).toInt().coerceIn(0, scrH - view.height)
                         view.layoutParams = lp
-                        // 메뉴도 같이 이동
                         updateMenuPosition(menuLayout, lp.rightMargin, lp.bottomMargin, fabSize, density)
                         lastRawX = event.rawX; lastRawY = event.rawY
                     }
@@ -143,12 +168,11 @@ abstract class BaseActivity : AppCompatActivity() {
         }
 
         decorView.addView(btn, fabParams)
-        decorView.addView(menuLayout)      // decorView에 같이 추가
+        decorView.addView(menuLayout)
         devFab           = btn
         devMenuContainer = menuLayout
     }
 
-    // ─── 메뉴 레이아웃 빌드 ──────────────────────────────────────────────────
     private fun buildMenuLayout(density: Float): LinearLayout {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -173,7 +197,6 @@ abstract class BaseActivity : AppCompatActivity() {
                 setPadding(0, (4 * density).toInt(), 0, (4 * density).toInt())
             }
 
-            // 텍스트 라벨 (말풍선 배경)
             val tv = TextView(this).apply {
                 text = "$emoji  $label"
                 textSize = 13f
@@ -195,22 +218,15 @@ abstract class BaseActivity : AppCompatActivity() {
         return layout
     }
 
-    // ─── 메뉴 위치 계산 (FAB 왼쪽 위) ────────────────────────────────────────
     private fun updateMenuPosition(
         menu: LinearLayout,
         fabRightMargin: Int, fabBottomMargin: Int,
         fabSize: Int, density: Float
     ) {
-        val screenW = resources.displayMetrics.widthPixels
-        val screenH = resources.displayMetrics.heightPixels
-        val gap     = (8 * density).toInt()
-
+        val gap = (8 * density).toInt()
         val lp = menu.layoutParams as FrameLayout.LayoutParams
         lp.gravity = Gravity.BOTTOM or Gravity.END
-
-        // FAB의 오른쪽 끝 기준으로 메뉴를 오른쪽 정렬
         lp.rightMargin  = fabRightMargin
-        // FAB 위로 gap만큼 띄움
         lp.bottomMargin = fabBottomMargin + fabSize + gap
         menu.layoutParams = lp
     }
@@ -242,10 +258,8 @@ abstract class BaseActivity : AppCompatActivity() {
         devFab = null; devMenuContainer = null; menuVisible = false
     }
 
-    /** 하위 클래스에서 개발자 모드 활성화 직후 FAB를 즉시 표시할 때 호출 */
     protected fun refreshDevFab() { detachDevFab(); syncDevFab() }
 
-    // ─── 내비게이션 바 높이 ─────────────────────────────────────────────────
     private fun getNavBarHeight(): Int {
         val id = resources.getIdentifier("navigation_bar_height", "dimen", "android")
         return if (id > 0) resources.getDimensionPixelSize(id) else 0
@@ -319,7 +333,6 @@ abstract class BaseActivity : AppCompatActivity() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. 주소 → 좌표
                 val coordConn = URL("${Constants.BASE_URL}/address/coord?query=${java.net.URLEncoder.encode(address, "UTF-8")}")
                     .openConnection() as HttpURLConnection
                 coordConn.requestMethod = "GET"
@@ -342,7 +355,6 @@ abstract class BaseActivity : AppCompatActivity() {
                     }; return@launch
                 }
 
-                // 2. 운행(Trip) 생성
                 val tripConn = URL("${Constants.BASE_URL}/trips").openConnection() as HttpURLConnection
                 tripConn.requestMethod = "POST"
                 tripConn.setRequestProperty("Content-Type", "application/json")
