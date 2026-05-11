@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -641,13 +642,35 @@ class MainActivity : BaseActivity(),
         renderRunList(jsonArray)
     }
 
+    // ── 헬퍼: dp → px ───────────────────────────────────────────────────────
+    private fun dpToPx(dp: Int): Int =
+        (dp * resources.displayMetrics.density + 0.5f).toInt()
+
+    // ── 헬퍼: 작은 칩 뷰 생성 ───────────────────────────────────────────────
+    private fun makeChip(label: String, textHex: String, bgHex: String): TextView {
+        return TextView(this).apply {
+            text = label
+            textSize = 11f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(textHex))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(bgHex))
+                cornerRadius = dpToPx(20).toFloat()
+            }
+            setPadding(dpToPx(10), dpToPx(3), dpToPx(10), dpToPx(3))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+    }
+
     @SuppressLint("SetTextI18n", "MissingPermission")
     private fun renderRunList(jsonArray: JSONArray) {
         val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
         container.removeAllViews()
-        val titleColor  = if (isNightMode) Color.parseColor("#E0E0E0") else Color.BLACK
-        val statusColor = if (isNightMode) Color.parseColor("#AAAAAA") else Color.DKGRAY
 
+        // 진행 중 / 대기 항목만 표시
         val activeItems = mutableListOf<JSONObject>()
         for (i in 0 until jsonArray.length()) {
             val obj = jsonArray.getJSONObject(i)
@@ -658,67 +681,223 @@ class MainActivity : BaseActivity(),
         if (activeItems.isEmpty()) {
             container.addView(TextView(this).apply {
                 text = getString(R.string.navi_no_trips)
-                setPadding(20, 20, 20, 20); textSize = 16f; setTextColor(titleColor)
-            }); return
+                setPadding(dpToPx(16), dpToPx(32), dpToPx(16), dpToPx(32))
+                textSize = 15f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(if (isNightMode) Color.parseColor("#888888") else Color.parseColor("#999999"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            })
+            return
         }
 
         activeItems.forEachIndexed { index, obj ->
-            val tripId = obj.optString("id", "")
-            val rawDestName = obj.optString("dest_name", "")
+            val tripId     = obj.optString("id", "")
+            // optString 이 JSON null 을 "null" 문자열로 반환하는 경우 방어
+            val rawDestName = obj.optString("dest_name", "").let {
+                if (it == "null" || it.isBlank()) "" else it
+            }
             val rawDestLat  = obj.optDouble("dest_lat", 0.0)
             val rawDestLon  = obj.optDouble("dest_lon", 0.0)
-
             val loadingCount   = obj.optInt("loading_count", 0)
             val unloadingCount = obj.optInt("unloading_count", 0)
 
-            val displayName = rawDestName.takeIf { it.isNotEmpty() } ?: run {
-                val parts = mutableListOf<String>()
-                if (loadingCount > 0)   parts.add("상차지 ${loadingCount}건")
-                if (unloadingCount > 0) parts.add("하차지 ${unloadingCount}건")
-                parts.joinToString(" / ").takeIf { it.isNotEmpty() } ?: "경유지 운행"
-            }
-            val status = obj.optString("status", "대기")
+            // optimized_route.route 배열에서 destination 타입 노드의 이름 추출
+            val optimizedRoute = obj.optJSONObject("optimized_route")
+            val routeArr       = optimizedRoute?.optJSONArray("route")
+            val destFromRoute: String? = if (routeArr != null) {
+                (0 until routeArr.length())
+                    .map { routeArr.getJSONObject(it) }
+                    .lastOrNull { it.optString("type") == "destination" }
+                    ?.optString("name", "")
+                    ?.let { if (it == "null" || it.isBlank()) null else it }
+            } else null
 
-            val itemLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; setPadding(40, 40, 40, 40)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).also { it.bottomMargin = 24 }
-                setBackgroundResource(android.R.drawable.btn_default)
-            }
-            itemLayout.addView(TextView(this).apply {
-                text = "${index + 1}. $displayName"; textSize = 16f
-                setTypeface(null, android.graphics.Typeface.BOLD); setTextColor(titleColor)
-            })
+            // waypoints 배열에서 마지막 하차지(unloading) 이름 추출
+            val waypointsArr = obj.optJSONArray("waypoints")
+            val destFromWaypoints: String? = if (waypointsArr != null && waypointsArr.length() > 0) {
+                val wpList = (0 until waypointsArr.length()).map { waypointsArr.getJSONObject(it) }
+                // 마지막 unloading → 없으면 마지막 항목
+                val candidate = wpList.lastOrNull { it.optString("type", "unloading") == "unloading" }
+                    ?: wpList.last()
+                candidate.optString("name", "").let { if (it == "null" || it.isBlank()) null else it }
+            } else null
 
-            if (rawDestName.isNotEmpty() && (loadingCount > 0 || unloadingCount > 0)) {
-                itemLayout.addView(TextView(this).apply {
+            // 우선순위: dest_name → optimized_route 목적지 → waypoints 마지막 → 건수 폴백
+            val displayName = rawDestName.takeIf { it.isNotEmpty() }
+                ?: destFromRoute
+                ?: destFromWaypoints
+                ?: run {
                     val parts = mutableListOf<String>()
-                    if (loadingCount > 0)   parts.add("상차 ${loadingCount}건")
-                    if (unloadingCount > 0) parts.add("하차 ${unloadingCount}건")
-                    text = parts.joinToString(" · ")
-                    textSize = 12f; setTextColor(Color.parseColor("#FF8F00"))
-                    setPadding(0, 4, 0, 0)
-                })
+                    if (loadingCount > 0)   parts.add(getString(R.string.navi_loading_count, loadingCount))
+                    if (unloadingCount > 0) parts.add(getString(R.string.navi_unloading_count, unloadingCount))
+                    parts.joinToString(" / ").takeIf { it.isNotEmpty() } ?: getString(R.string.navi_waypoint_trip)
+                }
+
+            val status = obj.optString("status", "")
+            val statusText = when (status) {
+                "in_progress" -> getString(R.string.navi_status_in_progress)
+                "scheduled"   -> getString(R.string.navi_status_scheduled)
+                "completed"   -> getString(R.string.navi_status_completed)
+                "cancelled"   -> getString(R.string.navi_status_cancelled)
+                else          -> status
+            }
+            // 상태별 색상
+            val (statusTextColor, statusBgColor) = if (isNightMode) {
+                when (status) {
+                    "in_progress" -> Pair("#FFB74D", "#3E2000")
+                    else          -> Pair("#90CAF9", "#0D2137")
+                }
+            } else {
+                when (status) {
+                    "in_progress" -> Pair("#E65100", "#FFF3E0")
+                    else          -> Pair("#1565C0", "#E3F2FD")
+                }
             }
 
-            itemLayout.addView(TextView(this).apply {
-                text = "상태: $status"; textSize = 14f
-                setTextColor(statusColor); setPadding(0, 8, 0, 20)
+            // ── 카드 컨테이너 ─────────────────────────────────────────────────
+            val cardBg = GradientDrawable().apply {
+                setColor(if (isNightMode) Color.parseColor("#1E1E2A") else Color.WHITE)
+                cornerRadius = dpToPx(16).toFloat()
+            }
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background  = cardBg
+                elevation   = dpToPx(3).toFloat()
+                setPadding(dpToPx(20), dpToPx(18), dpToPx(20), dpToPx(18))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dpToPx(12)
+                    marginStart  = dpToPx(2)
+                    marginEnd    = dpToPx(2)
+                }
+            }
+
+            // ── 헤더 행: 번호 원 + 목적지 이름 + 상태 뱃지 ──────────────────
+            val headerRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity     = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            // 번호 원형 뱃지
+            val circleSize = dpToPx(30)
+            val indexView = TextView(this).apply {
+                text    = "${index + 1}"
+                textSize = 12f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                gravity = android.view.Gravity.CENTER
+                background = GradientDrawable().apply {
+                    shape    = GradientDrawable.OVAL
+                    setColor(Color.parseColor("#2E7D32"))
+                }
+                layoutParams = LinearLayout.LayoutParams(circleSize, circleSize).apply {
+                    marginEnd = dpToPx(12)
+                }
+            }
+
+            // 목적지 이름
+            val nameView = TextView(this).apply {
+                text    = displayName
+                textSize = 16f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+
+            // 상태 뱃지
+            val statusBadge = TextView(this).apply {
+                text    = statusText
+                textSize = 11f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(statusTextColor))
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor(statusBgColor))
+                    cornerRadius = dpToPx(20).toFloat()
+                }
+                setPadding(dpToPx(10), dpToPx(4), dpToPx(10), dpToPx(4))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dpToPx(8) }
+            }
+
+            headerRow.addView(indexView)
+            headerRow.addView(nameView)
+            headerRow.addView(statusBadge)
+            card.addView(headerRow)
+
+            // ── 상차/하차 칩 행 ──────────────────────────────────────────────
+            if (loadingCount > 0 || unloadingCount > 0) {
+                val chipRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dpToPx(10) }
+                }
+                if (loadingCount > 0) {
+                    chipRow.addView(
+                        makeChip("🚛 ${getString(R.string.navi_loading_count, loadingCount)}",
+                            "#E65100", if (isNightMode) "#3E1A00" else "#FFF3E0")
+                    )
+                }
+                if (unloadingCount > 0) {
+                    chipRow.addView(
+                        makeChip("📦 ${getString(R.string.navi_unloading_count, unloadingCount)}",
+                            "#0277BD", if (isNightMode) "#00233E" else "#E1F5FE"
+                        ).apply {
+                            (layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(6)
+                        }
+                    )
+                }
+                card.addView(chipRow)
+            }
+
+            // ── 구분선 ───────────────────────────────────────────────────────
+            card.addView(View(this).apply {
+                setBackgroundColor(
+                    if (isNightMode) Color.parseColor("#2E2E3A") else Color.parseColor("#F0F0F0")
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(1)
+                ).apply { topMargin = dpToPx(16); bottomMargin = dpToPx(14) }
             })
-            val btnLayout = LinearLayout(this).apply {
+
+            // ── 버튼 행 ──────────────────────────────────────────────────────
+            val btnRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
             }
 
-            btnLayout.addView(Button(this).apply {
+            // 취소 버튼
+            val cancelBtnBg = GradientDrawable().apply {
+                setColor(if (isNightMode) Color.parseColor("#2D0A0A") else Color.parseColor("#FFF5F5"))
+                cornerRadius = dpToPx(12).toFloat()
+            }
+            val cancelBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
                 text = getString(R.string.navi_btn_cancel_trip)
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-                ).apply { marginEnd = 20 }
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E74C3C"))
-                setTextColor(Color.WHITE)
+                textSize = 14f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(Color.parseColor(if (isNightMode) "#EF9A9A" else "#C62828"))
+                background = cancelBtnBg
+                stateListAnimator = null
+                elevation = 0f
+                layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f).apply {
+                    marginEnd = dpToPx(8)
+                }
                 setOnClickListener {
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle(getString(R.string.navi_cancel_confirm_title))
@@ -729,14 +908,22 @@ class MainActivity : BaseActivity(),
                         .setNegativeButton(getString(R.string.navi_no), null)
                         .show()
                 }
-            })
+            }
 
-            btnLayout.addView(Button(this).apply {
+            // 안내 시작 버튼
+            val startBtnBg = GradientDrawable().apply {
+                setColor(Color.parseColor("#2E7D32"))
+                cornerRadius = dpToPx(12).toFloat()
+            }
+            val startBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
                 text = getString(R.string.navi_btn_start)
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#03C75A"))
+                textSize = 14f
+                setTypeface(null, android.graphics.Typeface.BOLD)
                 setTextColor(Color.WHITE)
+                background = startBtnBg
+                stateListAnimator = null
+                elevation = 0f
+                layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f)
                 setOnClickListener {
                     currentNaviTripId = tripId
                     bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
@@ -749,9 +936,12 @@ class MainActivity : BaseActivity(),
                         optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, null, null)
                     }
                 }
-            })
-            itemLayout.addView(btnLayout)
-            container.addView(itemLayout)
+            }
+
+            btnRow.addView(cancelBtn)
+            btnRow.addView(startBtn)
+            card.addView(btnRow)
+            container.addView(card)
         }
     }
 
@@ -789,7 +979,7 @@ class MainActivity : BaseActivity(),
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.connectTimeout = 30000; conn.readTimeout = 30000; conn.doOutput = true
+                conn.connectTimeout = 90000; conn.readTimeout = 90000; conn.doOutput = true
 
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply {
@@ -902,11 +1092,11 @@ class MainActivity : BaseActivity(),
         val guidance = KNSDK.sharedGuidance() ?: return
         guidance.stop()
 
-        val limitedVias = if (vias.size > 10) {
+        val limitedVias = if (vias.size > 15) {
             runOnUiThread {
-                Toast.makeText(this, "경유지가 많아 가까운 10개까지만 먼저 안내합니다.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "경유지가 많아 가까운 15개까지만 먼저 안내합니다.", Toast.LENGTH_LONG).show()
             }
-            vias.take(10).toMutableList()
+            vias.take(15).toMutableList()
         } else {
             vias
         }

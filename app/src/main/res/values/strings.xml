@@ -74,6 +74,15 @@
     <string name="navi_status_label">상태</string>
     <string name="navi_no_delivery_id">배송지 ID가 없습니다.</string>
 
+    <!-- 운행 상태 표시 -->
+    <string name="navi_status_in_progress">진행 중</string>
+    <string name="navi_status_scheduled">배차 대기</string>
+    <string name="navi_status_completed">완료</string>
+    <string name="navi_status_cancelled">취소</string>
+    <string name="navi_waypoint_trip">경유지 운행</string>
+    <string name="navi_loading_count">상차 %1$d건</string>
+    <string name="navi_unloading_count">하차 %1$d건</string>
+
     <!-- ChatActivity -->
     <string name="chat_title">채팅 문의</string>
     <string name="chat_input_hint">메시지를 입력하세요</string>
@@ -94,19 +103,16 @@
     <string name="phone_support">전화 상담</string>
     <string name="close">닫기</string>
 
-    <!-- 공통 버튼 (여러 곳에서 재사용 가능) -->
+    <!-- 공통 버튼 -->
     <string name="common_confirm">확인</string>
     <string name="common_cancel">취소</string>
     <string name="common_yes">예</string>
     <string name="common_no">아니오</string>
 
-    <!-- HelpActivity - 직접 입력 다이얼로그 관련 -->
+    <!-- HelpActivity -->
     <string name="help_direct_input_title">취소 사유 입력</string>
     <string name="help_direct_input_hint">취소 사유를 입력해 주세요</string>
     <string name="help_direct_input_empty_toast">사유를 입력해 주세요.</string>
-
-    <!-- HelpActivity - 배차 취소 확인 관련 -->
-    <!-- %1$s 자리에 입력한 사유가 동적으로 들어갑니다. -->
     <string name="help_cancel_confirm_message">취소 사유: %1$s\n\n배차를 취소하시겠습니까?</string>
     <string name="help_cancel_request_complete">취소 요청이 접수되었습니다.</string>
 

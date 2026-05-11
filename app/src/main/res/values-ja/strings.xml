@@ -61,13 +61,22 @@
     <string name="navi_status_label">ステータス</string>
     <string name="navi_no_delivery_id">配送先IDがありません。</string>
 
-    <!-- MainActivity — 메인 화면 UI -->
+    <!-- 運行ステータス表示 -->
+    <string name="navi_status_in_progress">進行中</string>
+    <string name="navi_status_scheduled">配車待ち</string>
+    <string name="navi_status_completed">完了</string>
+    <string name="navi_status_cancelled">キャンセル</string>
+    <string name="navi_waypoint_trip">経由地運行</string>
+    <string name="navi_loading_count">積込 %1$d件</string>
+    <string name="navi_unloading_count">降ろし %1$d件</string>
+
+    <!-- MainActivity — UI -->
     <string name="main_trip_list_title">配車リスト</string>
     <string name="main_help_text">お困りですか？</string>
     <string name="main_settings_desc">設定</string>
     <string name="main_chat_desc">チャット問い合わせ</string>
 
-    <!-- 앱 버전 / 개발자 모드 -->
+    <!-- アプリバージョン / 開発者モード -->
     <string name="settings_app_version_label">アプリのバージョン</string>
     <string name="settings_dev_mode_enabled">開発者モードが有効になりました。 🔧</string>
     <string name="settings_dev_mode_disabled">開発者モードが無効になりました。</string>
@@ -100,13 +109,11 @@
     <string name="common_yes">はい</string>
     <string name="common_no">いいえ</string>
 
-    <!-- HelpActivity - 直接入力ダイアログ -->
-    <string name="help_direct_input_title">キャンセル理由의入力</string>
+    <!-- HelpActivity -->
+    <string name="help_direct_input_title">キャンセル理由の入力</string>
     <string name="help_direct_input_hint">キャンセル理由を入力してください</string>
     <string name="help_direct_input_empty_toast">理由を入力してください。</string>
-
-    <!-- HelpActivity - 配車キャンセル確認 -->
-    <string name="help_cancel_confirm_message">キャンセル理由: %1$s\n\n配車를キャンセルしますか？</string>
+    <string name="help_cancel_confirm_message">キャンセル理由: %1$s\n\n配車をキャンセルしますか？</string>
     <string name="help_cancel_request_complete">キャンセルリクエストを受け付けました。</string>
 
 </resources>

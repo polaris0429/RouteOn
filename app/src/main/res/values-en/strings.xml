@@ -31,7 +31,7 @@
     <string name="language_section_label">App Language</string>
     <string name="language_changed_toast">Language changed.</string>
 
-    <!-- 언어 표시 이름 -->
+    <!-- Language names -->
     <string name="lang_korean">한국어</string>
     <string name="lang_english">English</string>
     <string name="lang_japanese">日本語</string>
@@ -61,13 +61,22 @@
     <string name="navi_status_label">Status</string>
     <string name="navi_no_delivery_id">No delivery ID available.</string>
 
-    <!-- MainActivity — 메인 화면 UI -->
+    <!-- Trip status labels -->
+    <string name="navi_status_in_progress">In Progress</string>
+    <string name="navi_status_scheduled">Scheduled</string>
+    <string name="navi_status_completed">Completed</string>
+    <string name="navi_status_cancelled">Cancelled</string>
+    <string name="navi_waypoint_trip">Waypoint Trip</string>
+    <string name="navi_loading_count">Load %1$d</string>
+    <string name="navi_unloading_count">Unload %1$d</string>
+
+    <!-- MainActivity — UI -->
     <string name="main_trip_list_title">Dispatch List</string>
     <string name="main_help_text">Need help?</string>
     <string name="main_settings_desc">Settings</string>
     <string name="main_chat_desc">Chat Support</string>
 
-    <!-- 앱 버전 / 개발자 모드 -->
+    <!-- App version / Developer mode -->
     <string name="settings_app_version_label">App Version</string>
     <string name="settings_dev_mode_enabled">Developer mode has been enabled. 🔧</string>
     <string name="settings_dev_mode_disabled">Developer mode has been disabled.</string>
@@ -100,12 +109,10 @@
     <string name="common_yes">Yes</string>
     <string name="common_no">No</string>
 
-    <!-- HelpActivity - Direct Input Dialog -->
+    <!-- HelpActivity -->
     <string name="help_direct_input_title">Enter Reason</string>
     <string name="help_direct_input_hint">Please enter the reason for cancellation</string>
     <string name="help_direct_input_empty_toast">Please enter a reason.</string>
-
-    <!-- HelpActivity - Dispatch Cancellation Confirmation -->
     <string name="help_cancel_confirm_message">Reason: %1$s\n\nAre you sure you want to cancel the dispatch?</string>
     <string name="help_cancel_request_complete">Cancellation request has been submitted.</string>
 
