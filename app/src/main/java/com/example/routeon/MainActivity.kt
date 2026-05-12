@@ -1122,7 +1122,7 @@ class MainActivity : BaseActivity(),
         if (lat < 30.0 || lng < 120.0) return null
         return withContext(Dispatchers.IO) {
             try {
-                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KATEC")
+                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
@@ -1317,7 +1317,7 @@ class MainActivity : BaseActivity(),
         CoroutineScope(Dispatchers.IO).launch {
             if (lat < 30.0 || lng < 120.0) return@launch
             try {
-                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KATEC")
+                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
