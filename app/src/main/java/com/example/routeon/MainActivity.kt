@@ -1172,12 +1172,15 @@ class MainActivity : BaseActivity(),
                 }
 
                 if (conn.responseCode in 200..201) {
+                    // 1. 스트림에서 데이터를 한 번만 읽어서 변수에 저장합니다.
                     val responseString = conn.inputStream.bufferedReader().readText()
 
                     // 2. 로그에 원본 JSON을 출력합니다.
                     Log.d("NaviLog", "✅ 서버 응답 JSON 원본: $responseString")
+
+                    // 3. 다시 읽지 말고, 이미 저장해둔 문자열 변수를 넘겨줍니다.
                     parseAndStartNavi(
-                        JSONObject(conn.inputStream.bufferedReader().readText()),
+                        JSONObject(responseString), // ✨ 여기를 수정했습니다.
                         currentLat ?: 0.0, currentLng ?: 0.0,
                         destName, destLat, destLng
                     )
