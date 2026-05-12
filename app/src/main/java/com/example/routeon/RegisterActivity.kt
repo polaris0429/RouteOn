@@ -495,7 +495,7 @@ class RegisterActivity : AppCompatActivity() {
 
                     val messageObj = JSONObject().apply {
                         put("to", phone)
-                        put("from", "01057022581")
+                        put("from", "01081972581")
                         put("text", "[RouteOn] 기사 가입 인증번호는 [$generatedCode] 입니다.")
                     }
                     val jsonParam = JSONObject().apply { put("message", messageObj) }

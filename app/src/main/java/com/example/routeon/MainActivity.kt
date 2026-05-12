@@ -527,33 +527,60 @@ class MainActivity : BaseActivity(),
 
             @SuppressLint("MissingPermission")
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d("LocationWS", "📩 수신된 웹소켓 메시지: $text")
+                // 1. 서버가 보낸 원본 메시지를 그대로 모두 출력합니다.
+                Log.d("LocationWS", "📩 [전체 메시지 수신] $text")
+
                 try {
                     val json = JSONObject(text)
                     val msgType = json.optString("type")
+                    Log.d("LocationWS", "🔍 메시지 타입(type): $msgType")
 
-                    // 서버 heartbeat ping → pong 즉시 응답 (연결 유지 핵심)
+                    // 서버 heartbeat ping → pong 즉시 응답 (연결 유지)
                     if (msgType == "ping") {
                         webSocket.send("""{"type":"pong"}""")
                         return
                     }
 
                     if (msgType == "replan_requested") {
+                        Log.d("LocationWS", "🚨 [Replan] 경유지 추가(재탐색) 요청 진입!")
+
+                        // 서버 메시지 구조에 맞춰 데이터 파싱
+                        val tripId = json.optString("trip_id")
+                        val driverId = json.optString("driver_id")
                         val message = json.optString("message", getString(R.string.navi_replan_title))
-                        val tripId  = json.optString("trip_id")
-                        val wps     = json.optJSONArray("waypoints") ?: JSONArray()
+                        val wps = json.optJSONArray("waypoints") ?: JSONArray()
+
+                        // 2. 추가된 경유지 정보(new_waypoint) 상세 로깅
+                        val newWaypoint = json.optJSONObject("new_waypoint")
+                        if (newWaypoint != null) {
+                            val wpName = newWaypoint.optString("name")
+                            val wpLat = newWaypoint.optDouble("lat")
+                            val wpLon = newWaypoint.optDouble("lon")
+                            Log.d("LocationWS", "📍 [Replan] 추가된 경유지: $wpName (lat: $wpLat, lon: $wpLon)")
+                        }
+
+                        Log.d("LocationWS", "🚨 [Replan] tripId: $tripId, driverId: $driverId")
+                        Log.d("LocationWS", "🚨 [Replan] 갱신된 총 경유지 개수: ${wps.length()}개")
+                        Log.d("LocationWS", "🚨 [Replan] 사용자 팝업 메시지: $message")
 
                         runOnUiThread {
-                            if (isFinishing || isDestroyed) return@runOnUiThread
+                            Log.d("LocationWS", "🚨 [Replan] UI 스레드에서 팝업 호출 시도...")
+                            if (isFinishing || isDestroyed) {
+                                Log.e("LocationWS", "❌ [Replan] 액티비티가 백그라운드/종료 상태여서 팝업이 무시됨")
+                                return@runOnUiThread
+                            }
 
                             AlertDialog.Builder(this@MainActivity)
                                 .setTitle(getString(R.string.navi_replan_title))
                                 .setMessage(message)
                                 .setPositiveButton(getString(R.string.navi_replan_confirm)) { _, _ ->
-                                    // 위치를 못 가져오면 저장해둔 lastLat, lastLng 사용
+                                    Log.d("LocationWS", "🚨 [Replan] 사용자가 팝업 '확인' 클릭 - 경로 재계산 API(POST /optimize/replan) 호출")
+
                                     fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
                                         val lat = loc?.latitude ?: lastLat
                                         val lng = loc?.longitude ?: lastLng
+
+                                        Log.d("LocationWS", "🚨 [Replan] 갱신된 내 위치 - lat: $lat, lng: $lng")
 
                                         if (lat != 0.0 && lng != 0.0) {
                                             requestReplan(tripId, lat, lng, wps)
@@ -561,6 +588,7 @@ class MainActivity : BaseActivity(),
                                             Toast.makeText(this@MainActivity, "현재 위치를 확인할 수 없습니다.", Toast.LENGTH_SHORT).show()
                                         }
                                     }.addOnFailureListener {
+                                        Log.e("LocationWS", "❌ [Replan] 위치 요청 실패, 기존 저장된 위치 사용")
                                         if (lastLat != 0.0 && lastLng != 0.0) {
                                             requestReplan(tripId, lastLat, lastLng, wps)
                                         } else {
@@ -568,8 +596,11 @@ class MainActivity : BaseActivity(),
                                         }
                                     }
                                 }.setCancelable(false).show()
+
+                            Log.d("LocationWS", "🚨 [Replan] 화면에 팝업 정상 노출됨")
                         }
                     } else {
+                        // 기타 메시지 (도착 처리 등)
                         val arr = json.optJSONArray("arrived_deliveries")
                         if (arr != null && arr.length() > 0) {
                             runOnUiThread {
@@ -580,7 +611,7 @@ class MainActivity : BaseActivity(),
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("LocationWS", "❌ 메시지 파싱 오류: ${e.message}")
+                    Log.e("LocationWS", "❌ 메시지 파싱 오류: ${e.message}\n원본 텍스트: $text")
                 }
             }
 
