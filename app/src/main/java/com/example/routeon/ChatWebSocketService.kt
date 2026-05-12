@@ -19,7 +19,11 @@ class ChatWebSocketService : Service() {
 
     private var webSocket: WebSocket? = null
     private val httpClient = OkHttpClient.Builder()
-        .pingInterval(20, TimeUnit.SECONDS)
+        // pingInterval 제거: 서버(uvicorn --ws-ping-interval 20)가 PING을 보내고
+        // OkHttp가 자동으로 PONG 응답 → 양쪽 동시 PING 충돌 방지
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .writeTimeout(0, TimeUnit.MILLISECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
         .build()
 
     private var reconnectDelayMs = 3_000L
@@ -106,6 +110,12 @@ class ChatWebSocketService : Service() {
         try {
             val json = JSONObject(raw)
             val eventType = json.optString("type", json.optString("event", ""))
+
+            // 서버 heartbeat ping → pong 즉시 응답
+            if (eventType == "ping") {
+                webSocket?.send("""{"type":"pong"}""")
+                return
+            }
 
             // 💡 핵심 해결: 이벤트가 chat.message 거나 일단 뭔가 넘어오면 무조건 캐치
             if (eventType == "chat.message" || raw.contains("content") || raw.contains("message")) {

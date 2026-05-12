@@ -66,7 +66,7 @@
     <string name="navi_cancel_confirm_message">정말 취소하시겠습니까?</string>
     <string name="navi_btn_start">안내 시작</string>
     <string name="navi_btn_cancel_trip">운행 취소</string>
-    <string name="navi_btn_complete_dest">🏁 운행 전체 완료 (목적지 도착)</string>
+    <string name="navi_btn_complete_dest">운행 완료 (목적지 도착)</string>
     <string name="navi_btn_complete_delivery">📦 배송지 수동 완료</string>
     <string name="navi_location_permission">위치 권한이 필요합니다.</string>
     <string name="navi_yes">예</string>
@@ -115,5 +115,19 @@
     <string name="help_direct_input_empty_toast">사유를 입력해 주세요.</string>
     <string name="help_cancel_confirm_message">취소 사유: %1$s\n\n배차를 취소하시겠습니까?</string>
     <string name="help_cancel_request_complete">취소 요청이 접수되었습니다.</string>
+
+    <!-- 배차 수락 / 출발지 선택 흐름 -->
+    <string name="navi_btn_accept_dispatch">배차 수락</string>
+    <string name="navi_btn_cancel_dispatch">배차 취소</string>
+    <string name="navi_btn_reject_dispatch">배차 거절</string>
+    <string name="navi_origin_select_title">출발지 선택</string>
+    <string name="navi_origin_current_option">📍 현재 위치 사용</string>
+    <string name="navi_origin_address_option">🔍 주소 직접 입력</string>
+    <string name="navi_origin_address_title">출발지 주소 입력</string>
+    <string name="navi_origin_address_hint">예: 서울시 강남구 테헤란로 521</string>
+    <string name="navi_origin_unavailable">현재 위치를 가져올 수 없습니다.</string>
+    <string name="navi_origin_not_found">주소를 찾을 수 없습니다.</string>
+    <string name="navi_origin_geocoding">주소 변환 중…</string>
+    <string name="navi_origin_change">변경</string>
 
 </resources>

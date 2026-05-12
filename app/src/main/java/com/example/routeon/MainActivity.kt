@@ -106,6 +106,15 @@ class MainActivity : BaseActivity(),
     private val httpClient = OkHttpClient()
     private var webSocket: WebSocket? = null
 
+    // WebSocket 전용 클라이언트 — 앱 생명주기 동안 재사용, 타임아웃 없음
+    // pingInterval 제거: 서버(uvicorn --ws-ping-interval 20)가 PING을 보내고
+    // OkHttp가 자동으로 PONG 응답 → 양쪽 동시 PING 충돌 방지
+    private val wsHttpClient = OkHttpClient.Builder()
+        .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
+        .writeTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
     private var currentNaviTripId: String? = null
     private val currentStops = mutableListOf<RouteStop>()
 
@@ -156,6 +165,12 @@ class MainActivity : BaseActivity(),
     private var lastLng: Double = 0.0
 
     private var isLocationWsReconnecting = false
+
+    // 배차 수락 상태 변수 — 수락 후 출발지 선택 완료까지 유지
+    private var acceptedTripId: String? = null
+    private var acceptedOriginName: String = "실내 위치"
+    private var acceptedOriginLat: Double = 0.0
+    private var acceptedOriginLon: Double = 0.0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -496,15 +511,15 @@ class MainActivity : BaseActivity(),
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
 
-        val wsClient = httpClient.newBuilder()
-            .pingInterval(20, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+        // 재연결 시 기존 소켓 명시적으로 닫기
+        webSocket?.cancel()
+        webSocket = null
 
         val request = Request.Builder()
             .url("${Constants.WS_URL}/ws/location")
             .addHeader("Authorization", "Bearer $token").build()
 
-        webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
+        webSocket = wsHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("LocationWS", "✅ 위치 웹소켓 연결 성공")
                 isLocationWsReconnecting = false
@@ -512,10 +527,18 @@ class MainActivity : BaseActivity(),
 
             @SuppressLint("MissingPermission")
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d("LocationWS", "📩 수신된 웹소켓 메시지: $text") // ← 이 로그가 찍히는지 꼭 확인하세요
+                Log.d("LocationWS", "📩 수신된 웹소켓 메시지: $text")
                 try {
                     val json = JSONObject(text)
-                    if (json.optString("type") == "replan_requested") {
+                    val msgType = json.optString("type")
+
+                    // 서버 heartbeat ping → pong 즉시 응답 (연결 유지 핵심)
+                    if (msgType == "ping") {
+                        webSocket.send("""{"type":"pong"}""")
+                        return
+                    }
+
+                    if (msgType == "replan_requested") {
                         val message = json.optString("message", getString(R.string.navi_replan_title))
                         val tripId  = json.optString("trip_id")
                         val wps     = json.optJSONArray("waypoints") ?: JSONArray()
@@ -717,6 +740,13 @@ class MainActivity : BaseActivity(),
                     playSequential(R.raw.bell, R.raw.trip_complite); vibrate(200)
                 }
             }
+        }
+        // 수락한 배차가 scheduled 상태를 벗어나면(취소/완료/기타) acceptedTripId 자동 초기화
+        if (acceptedTripId != null && newStatuses[acceptedTripId] != "scheduled") {
+            acceptedTripId = null
+            acceptedOriginLat = 0.0
+            acceptedOriginLon = 0.0
+            acceptedOriginName = "현재 위치"
         }
         knownTripStatuses.clear(); knownTripStatuses.putAll(newStatuses)
         isFirstFetch = false
@@ -963,64 +993,126 @@ class MainActivity : BaseActivity(),
                 )
             }
 
-            // 취소 버튼
-            val cancelBtnBg = GradientDrawable().apply {
-                setColor(if (isNightMode) Color.parseColor("#2D0A0A") else Color.parseColor("#FFF5F5"))
-                cornerRadius = dpToPx(12).toFloat()
-            }
-            val cancelBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
-                text = getString(R.string.navi_btn_cancel_trip)
-                textSize = 14f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(Color.parseColor(if (isNightMode) "#EF9A9A" else "#C62828"))
-                background = cancelBtnBg
-                stateListAnimator = null
-                elevation = 0f
-                layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f).apply {
-                    marginEnd = dpToPx(8)
+            // 배차 상태별 분기: scheduled+미수락 → [배차 거절][배차 수락] / 그 외 → [운행 완료][안내 시작]
+            if (status == "scheduled" && tripId != acceptedTripId) {
+                val rejectBtnBg = GradientDrawable().apply {
+                    setColor(if (isNightMode) Color.parseColor("#2D0A0A") else Color.parseColor("#FFF5F5"))
+                    cornerRadius = dpToPx(12).toFloat()
                 }
-                setOnClickListener {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle(getString(R.string.navi_cancel_confirm_title))
-                        .setMessage(getString(R.string.navi_cancel_confirm_message))
-                        .setPositiveButton(getString(R.string.navi_yes)) { _, _ ->
-                            updateTripStatus(tripId, "cancelled")
-                        }
-                        .setNegativeButton(getString(R.string.navi_no), null)
-                        .show()
-                }
-            }
-
-            // 안내 시작 버튼
-            val startBtnBg = GradientDrawable().apply {
-                setColor(Color.parseColor("#2E7D32"))
-                cornerRadius = dpToPx(12).toFloat()
-            }
-            val startBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
-                text = getString(R.string.navi_btn_start)
-                textSize = 14f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                background = startBtnBg
-                stateListAnimator = null
-                elevation = 0f
-                layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f)
-                setOnClickListener {
-                    currentNaviTripId = tripId
-                    bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
-                    fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                        optimizeAndStartNavi(
-                            tripId, displayName, rawDestLat, rawDestLon,
-                            loc?.latitude, loc?.longitude
-                        )
-                    }.addOnFailureListener {
-                        optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, null, null)
+                val rejectBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
+                    text = getString(R.string.navi_btn_reject_dispatch)
+                    textSize = 14f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(if (isNightMode) "#EF9A9A" else "#C62828"))
+                    background = rejectBtnBg
+                    stateListAnimator = null
+                    elevation = 0f
+                    layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f).apply {
+                        marginEnd = dpToPx(8)
+                    }
+                    setOnClickListener {
+                        getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                            .edit().putString("cancel_trip_id", tripId).apply()
+                        startActivity(Intent(this@MainActivity, HelpActivity::class.java))
                     }
                 }
+                val acceptBtnBg = GradientDrawable().apply {
+                    setColor(Color.parseColor("#2E7D32"))
+                    cornerRadius = dpToPx(12).toFloat()
+                }
+                val acceptBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
+                    text = getString(R.string.navi_btn_accept_dispatch)
+                    textSize = 14f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    background = acceptBtnBg
+                    stateListAnimator = null
+                    elevation = 0f
+                    layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f)
+                    setOnClickListener {
+                        acceptedTripId = tripId
+                        fetchTrips()
+                    }
+                }
+                btnRow.addView(rejectBtn)
+                btnRow.addView(acceptBtn)
+            } else {
+                // 수락됨(예약+수락) 또는 운행 중(in_progress): [운행 완료] [안내 시작]
+                val completeBtnBg = GradientDrawable().apply {
+                    setColor(if (isNightMode) Color.parseColor("#0D2137") else Color.parseColor("#E3F2FD"))
+                    cornerRadius = dpToPx(12).toFloat()
+                }
+                val completeBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
+                    text = getString(R.string.navi_btn_complete_dest)
+                    textSize = 14f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(if (isNightMode) "#90CAF9" else "#1565C0"))
+                    background = completeBtnBg
+                    stateListAnimator = null
+                    elevation = 0f
+                    layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f).apply {
+                        marginEnd = dpToPx(8)
+                    }
+                    setOnClickListener {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle(getString(R.string.navi_cancel_confirm_title))
+                            .setMessage("운행을 완료 처리하시겠습니까?")
+                            .setPositiveButton(getString(R.string.navi_yes)) { _, _ ->
+                                acceptedTripId = null
+                                updateTripStatus(tripId, "completed")
+                            }
+                            .setNegativeButton(getString(R.string.navi_no), null)
+                            .show()
+                    }
+                }
+                val startBtnBg = GradientDrawable().apply {
+                    setColor(Color.parseColor("#2E7D32"))
+                    cornerRadius = dpToPx(12).toFloat()
+                }
+                val startBtn = androidx.appcompat.widget.AppCompatButton(this).apply {
+                    text = getString(R.string.navi_btn_start)
+                    textSize = 14f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    background = startBtnBg
+                    stateListAnimator = null
+                    elevation = 0f
+                    layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f)
+                    setOnClickListener {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle(getString(R.string.navi_origin_select_title))
+                            .setItems(arrayOf(
+                                getString(R.string.navi_origin_current_option),
+                                getString(R.string.navi_origin_address_option)
+                            )) { _, which ->
+                                when (which) {
+                                    0 -> {
+                                        currentNaviTripId = tripId
+                                        bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+                                        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                                            optimizeAndStartNavi(
+                                                tripId, displayName, rawDestLat, rawDestLon,
+                                                loc?.latitude ?: lastLat.takeIf { it != 0.0 },
+                                                loc?.longitude ?: lastLng.takeIf { it != 0.0 }
+                                            )
+                                        }.addOnFailureListener {
+                                            optimizeAndStartNavi(
+                                                tripId, displayName, rawDestLat, rawDestLon,
+                                                lastLat.takeIf { it != 0.0 },
+                                                lastLng.takeIf { it != 0.0 }
+                                            )
+                                        }
+                                    }
+                                    1 -> showOriginAddressDialog(tripId, displayName, rawDestLat, rawDestLon)
+                                }
+                            }
+                            .setNegativeButton(getString(R.string.common_cancel), null)
+                            .show()
+                    }
+                }
+                btnRow.addView(completeBtn)
+                btnRow.addView(startBtn)
             }
-
-            btnRow.addView(cancelBtn)
-            btnRow.addView(startBtn)
             card.addView(btnRow)
             container.addView(card)
         }
@@ -1299,7 +1391,8 @@ class MainActivity : BaseActivity(),
                 }
                 OutputStreamWriter(conn.outputStream).use { it.write(jp.toString()) }
                 conn.responseCode
-                webSocket?.send(jp.toString())
+                // GPS 데이터는 HTTP POST(/location-logs)로만 전송
+                // WebSocket으로도 보낼 경우 서버 WS 핸들러가 예상치 못한 메시지로 인식해 연결 종료
             } catch (e: Exception) { }
         }
     }
@@ -1381,6 +1474,68 @@ class MainActivity : BaseActivity(),
         if (::naviView.isInitialized) naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
     override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
         if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
+    private fun showOriginAddressDialog(
+        tripId: String, displayName: String, rawDestLat: Double, rawDestLon: Double
+    ) {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.navi_origin_address_hint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            setPadding(dpToPx(20), dpToPx(16), dpToPx(20), dpToPx(16))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.navi_origin_address_title))
+            .setView(input)
+            .setPositiveButton(getString(R.string.navi_replan_confirm)) { _, _ ->
+                val address = input.text.toString().trim()
+                if (address.isEmpty()) {
+                    Toast.makeText(this, getString(R.string.navi_origin_address_hint), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                    .getString("access_token", null) ?: return@setPositiveButton
+                Toast.makeText(this, getString(R.string.navi_origin_geocoding), Toast.LENGTH_SHORT).show()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val encoded = java.net.URLEncoder.encode(address, "UTF-8")
+                        val conn = URL("${Constants.BASE_URL}/address/coord?query=$encoded")
+                            .openConnection() as HttpURLConnection
+                        conn.requestMethod = "GET"
+                        conn.setRequestProperty("Authorization", "Bearer $token")
+                        conn.connectTimeout = 8000; conn.readTimeout = 8000
+                        if (conn.responseCode == 200) {
+                            val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                            val lat = json.optDouble("lat", 0.0)
+                            val lon = json.optDouble("lon", json.optDouble("lng", 0.0))
+                            if (lat != 0.0 || lon != 0.0) {
+                                withContext(Dispatchers.Main) {
+                                    currentNaviTripId = tripId
+                                    bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+                                    optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, lat, lon)
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(this@MainActivity,
+                                        getString(R.string.navi_origin_not_found), Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@MainActivity,
+                                    getString(R.string.navi_origin_not_found), Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity,
+                                "오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .show()
+    }
+
     override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) {
         if (::naviView.isInitialized) naviView.didUpdateCitsGuide(aGuidance, aCitsGuide) }
 }
