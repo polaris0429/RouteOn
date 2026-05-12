@@ -1122,7 +1122,7 @@ class MainActivity : BaseActivity(),
         if (lat < 30.0 || lng < 120.0) return null
         return withContext(Dispatchers.IO) {
             try {
-                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
+                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KATEC")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
@@ -1141,7 +1141,8 @@ class MainActivity : BaseActivity(),
 
     private fun optimizeAndStartNavi(
         tripId: String, destName: String, destLat: Double, destLng: Double,
-        currentLat: Double?, currentLng: Double?
+        currentLat: Double?, currentLng: Double?,
+        originNameForBackend: String? = null  // ✨ 백엔드 전송 여부를 결정할 파라미터 추가
     ) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
@@ -1157,17 +1158,24 @@ class MainActivity : BaseActivity(),
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply {
                         put("trip_id", tripId)
-                        if (currentLat != null && currentLng != null) {
-                            put("origin_name", "현재 위치")
+
+                        // ✨ originNameForBackend 값이 전달되었을 때(직접 입력)만 백엔드로 전송
+                        if (originNameForBackend != null && currentLat != null && currentLng != null) {
+                            put("origin_name", originNameForBackend)
                             put("origin_lat",  currentLat)
                             put("origin_lon",  currentLng)
                         }
+
                         put("initial_drive_sec", 0)
                         put("is_emergency", false)
                     }.toString())
                 }
 
                 if (conn.responseCode in 200..201) {
+                    val responseString = conn.inputStream.bufferedReader().readText()
+
+                    // 2. 로그에 원본 JSON을 출력합니다.
+                    Log.d("NaviLog", "✅ 서버 응답 JSON 원본: $responseString")
                     parseAndStartNavi(
                         JSONObject(conn.inputStream.bufferedReader().readText()),
                         currentLat ?: 0.0, currentLng ?: 0.0,
@@ -1197,7 +1205,7 @@ class MainActivity : BaseActivity(),
         fallbackDestName: String, fallbackLat: Double, fallbackLng: Double
     ) {
         val arr = jsonResponse.optJSONArray("route")
-            ?: jsonResponse.optJSONArray("optimized_route")
+            ?: jsonResponse.optJSONObject("optimized_route")?.optJSONArray("route")
             ?: jsonResponse.optJSONArray("waypoints")
 
         if (arr != null && arr.length() > 0) {
@@ -1309,7 +1317,7 @@ class MainActivity : BaseActivity(),
         CoroutineScope(Dispatchers.IO).launch {
             if (lat < 30.0 || lng < 120.0) return@launch
             try {
-                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KTM")
+                val conn = URL("https://dapi.kakao.com/v2/local/geo/transcoord.json?x=$lng&y=$lat&input_coord=WGS84&output_coord=KATEC")
                     .openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
@@ -1510,7 +1518,8 @@ class MainActivity : BaseActivity(),
                                 withContext(Dispatchers.Main) {
                                     currentNaviTripId = tripId
                                     bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
-                                    optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, lat, lon)
+                                    // ✨ 맨 뒤에 address를 추가하여 백엔드 전송 트리거
+                                    optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, lat, lon, address)
                                 }
                             } else {
                                 withContext(Dispatchers.Main) {
