@@ -53,8 +53,8 @@
     <string name="navi_cancel_confirm_message">本当にキャンセルしますか？</string>
     <string name="navi_btn_start">案内開始</string>
     <string name="navi_btn_cancel_trip">運行キャンセル</string>
-    <string name="navi_btn_complete_dest">🏁 運行完了（目的地到着）</string>
-    <string name="navi_btn_complete_delivery">📦 配送手動完了</string>
+    <string name="navi_btn_complete_dest">運行完了（目的地到着）</string>
+    <string name="navi_btn_complete_delivery">配送手動完了</string>
     <string name="navi_location_permission">位置情報の権限が必要です。</string>
     <string name="navi_yes">はい</string>
     <string name="navi_no">いいえ</string>

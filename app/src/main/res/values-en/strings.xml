@@ -53,8 +53,8 @@
     <string name="navi_cancel_confirm_message">Are you sure you want to cancel?</string>
     <string name="navi_btn_start">Start</string>
     <string name="navi_btn_cancel_trip">Cancel Trip</string>
-    <string name="navi_btn_complete_dest">🏁 Complete Trip (Destination Arrived)</string>
-    <string name="navi_btn_complete_delivery">📦 Manual Delivery Complete</string>
+    <string name="navi_btn_complete_dest">Complete Trip (Destination Arrived)</string>
+    <string name="navi_btn_complete_delivery">Manual Delivery Complete</string>
     <string name="navi_location_permission">Location permission is required.</string>
     <string name="navi_yes">Yes</string>
     <string name="navi_no">No</string>
