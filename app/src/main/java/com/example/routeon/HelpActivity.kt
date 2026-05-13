@@ -12,6 +12,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.Toolbar
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 
 class HelpActivity : BaseActivity() {
 
@@ -99,11 +105,45 @@ class HelpActivity : BaseActivity() {
     private fun confirmCancel(reason: String) {
         AlertDialog.Builder(this)
             .setTitle(R.string.dispatch_cancel)
-            // XML의 %1$s 자리에 reason 변수를 넣어서 문장을 완성합니다.
             .setMessage(getString(R.string.help_cancel_confirm_message, reason))
             .setPositiveButton(R.string.common_yes) { _, _ ->
-                Toast.makeText(this, R.string.help_cancel_request_complete, Toast.LENGTH_SHORT).show()
-                finish()
+                val prefs = getSharedPreferences("RouteOnPrefs", MODE_PRIVATE)
+                val token = prefs.getString("access_token", null)
+                val tripId = prefs.getString("cancel_trip_id", null)
+
+                if (token == null || tripId == null) {
+                    Toast.makeText(this, "취소할 운행 정보를 찾을 수 없습니다.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val conn = URL("${Constants.BASE_URL}/trips/$tripId/status?status=cancelled")
+                            .openConnection() as HttpURLConnection
+                        conn.requestMethod = "PATCH"
+                        conn.setRequestProperty("Authorization", "Bearer $token")
+                        conn.connectTimeout = 8000
+                        conn.readTimeout = 8000
+
+                        val code = conn.responseCode
+                        withContext(Dispatchers.Main) {
+                            if (code in 200..204) {
+                                prefs.edit().remove("cancel_trip_id").apply()
+                                Toast.makeText(this@HelpActivity,
+                                    R.string.help_cancel_request_complete, Toast.LENGTH_SHORT).show()
+                                finish()
+                            } else {
+                                Toast.makeText(this@HelpActivity,
+                                    "취소 실패 (코드 $code)", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@HelpActivity,
+                                "네트워크 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
             }
             .setNegativeButton(R.string.common_no, null)
             .show()
