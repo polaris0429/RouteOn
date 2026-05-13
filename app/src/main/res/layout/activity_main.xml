@@ -44,64 +44,64 @@
             android:layout_width="300dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:padding="36dp"
             android:background="@drawable/rest_stop_card_bg"
-            android:elevation="8dp">
+            android:elevation="8dp"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="36dp">
 
             <!-- 주차 아이콘 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
                 android:text="🅿"
-                android:textSize="52sp"
-                android:layout_marginBottom="6dp"/>
+                android:textSize="52sp" />
 
             <!-- 휴게소 이름 -->
             <TextView
                 android:id="@+id/tvRestStopName"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text=""
-                android:textSize="14sp"
-                android:textColor="#AAAAAA"
+                android:layout_marginBottom="14dp"
                 android:gravity="center"
-                android:layout_marginBottom="14dp"/>
+                android:text=""
+                android:textColor="#AAAAAA"
+                android:textSize="14sp" />
 
             <!-- 타이틀 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="휴식시간입니다."
-                android:textSize="26sp"
-                android:textStyle="bold"
-                android:textColor="#FFFFFF"
+                android:layout_marginBottom="28dp"
                 android:gravity="center"
-                android:layout_marginBottom="28dp"/>
+                android:text="휴식시간입니다."
+                android:textColor="#FFFFFF"
+                android:textSize="26sp"
+                android:textStyle="bold" />
 
             <!-- 카운트다운 타이머 -->
             <TextView
                 android:id="@+id/tvRestTimer"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="15:00"
-                android:textSize="64sp"
-                android:textStyle="bold"
                 android:fontFamily="monospace"
-                android:textColor="#4CAF50"
                 android:gravity="center"
-                android:includeFontPadding="false"/>
+                android:includeFontPadding="false"
+                android:text="15:00"
+                android:textColor="#4CAF50"
+                android:textSize="64sp"
+                android:textStyle="bold" />
 
             <!-- 남은 시간 라벨 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="남은 휴식 시간"
-                android:textSize="13sp"
-                android:textColor="#888888"
+                android:layout_marginTop="10dp"
                 android:gravity="center"
-                android:layout_marginTop="10dp"/>
+                android:text="남은 휴식 시간"
+                android:textColor="#888888"
+                android:textSize="13sp" />
 
         </LinearLayout>
     </FrameLayout>

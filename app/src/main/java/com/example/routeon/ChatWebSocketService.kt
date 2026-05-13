@@ -66,9 +66,7 @@ class ChatWebSocketService : Service() {
         if (token.isNullOrEmpty()) return
 
         // 💡 핵심 해결: HTTP 주소를 무조건 강제로 WS 주소로 변환하여 연결 보장
-        val wsUrl = Constants.BASE_URL
-            .replaceFirst("http://", "ws://")
-            .replaceFirst("https://", "wss://") + "/ws/chat?token=$token"
+        val wsUrl = Constants.WS_URL
 
         val request = Request.Builder().url(wsUrl).build()
 
