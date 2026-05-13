@@ -137,6 +137,8 @@ class MainActivity : BaseActivity(),
     private val knownTripStatuses = mutableMapOf<String, String>()
     private var isFirstFetch = true
 
+    private var backPressedTime: Long = 0
+
     private var permissionDialog: AlertDialog? = null
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -216,6 +218,24 @@ class MainActivity : BaseActivity(),
                 applySystemBarsColor()
             }
             override fun onSlide(bottomSheet: View, slideOffset: Float) { applySystemBarsColor() }
+        })
+
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // 1. 바텀 시트가 확장된 상태라면 먼저 닫습니다.
+                if (bottomSheetBehavior?.state == BottomSheetBehavior.STATE_EXPANDED) {
+                    bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+                    return
+                }
+
+                // 2. 바텀 시트가 닫혀있다면 2초 내 두 번 터치 확인 로직을 실행합니다.
+                if (System.currentTimeMillis() - backPressedTime < 2000) {
+                    finish() // 앱 종료
+                } else {
+                    Toast.makeText(this@MainActivity, "한 번 더 누르면 종료됩니다.", Toast.LENGTH_SHORT).show()
+                    backPressedTime = System.currentTimeMillis()
+                }
+            }
         })
 
         binding.btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
