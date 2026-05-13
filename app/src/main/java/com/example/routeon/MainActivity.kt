@@ -1223,6 +1223,176 @@ class MainActivity : BaseActivity(),
                 btnRow.addView(rejectBtn)
                 btnRow.addView(acceptBtn)
             } else {
+                // ── 출발지/목적지 입력 패널 (+ 버튼으로 토글) ─────────────────
+                val originCoords = doubleArrayOf(0.0, 0.0)  // [lat, lon]
+                val destCoords   = doubleArrayOf(0.0, 0.0)  // [lat, lon]
+
+                // 출발지 입력 행
+                val originInputRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity     = android.view.Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dpToPx(6) }
+                }
+                val originLabel = TextView(this).apply {
+                    text     = "출발지"
+                    textSize = 12f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(if (isNightMode) "#AAAAAA" else "#666666"))
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(44), LinearLayout.LayoutParams.WRAP_CONTENT)
+                }
+                val originField = android.widget.EditText(this).apply {
+                    hint         = "출발지 이름·주소 검색"
+                    textSize     = 13f
+                    maxLines     = 1
+                    isSingleLine = true
+                    setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
+                    setHintTextColor(Color.parseColor(if (isNightMode) "#666666" else "#AAAAAA"))
+                    background = GradientDrawable().apply {
+                        setColor(if (isNightMode) Color.parseColor("#2A2A3A") else Color.parseColor("#EBEBEB"))
+                        cornerRadius = dpToPx(8).toFloat()
+                    }
+                    setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8))
+                    imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val originSearchBtn = TextView(this).apply {
+                    text      = "🔍"
+                    textSize  = 15f
+                    gravity   = android.view.Gravity.CENTER
+                    setPadding(dpToPx(6), 0, 0, 0)
+                    val sz2 = dpToPx(34)
+                    layoutParams = LinearLayout.LayoutParams(sz2, sz2)
+                    isClickable = true
+                    isFocusable = true
+                }
+                originInputRow.addView(originLabel)
+                originInputRow.addView(originField)
+                originInputRow.addView(originSearchBtn)
+
+                // 목적지 입력 행
+                val destInputRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity     = android.view.Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
+                val destLabel = TextView(this).apply {
+                    text     = "목적지"
+                    textSize = 12f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.parseColor(if (isNightMode) "#AAAAAA" else "#666666"))
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(44), LinearLayout.LayoutParams.WRAP_CONTENT)
+                }
+                val destField = android.widget.EditText(this).apply {
+                    hint         = "목적지 이름·주소 검색"
+                    textSize     = 13f
+                    maxLines     = 1
+                    isSingleLine = true
+                    setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
+                    setHintTextColor(Color.parseColor(if (isNightMode) "#666666" else "#AAAAAA"))
+                    background = GradientDrawable().apply {
+                        setColor(if (isNightMode) Color.parseColor("#2A2A3A") else Color.parseColor("#EBEBEB"))
+                        cornerRadius = dpToPx(8).toFloat()
+                    }
+                    setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8))
+                    imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val destSearchBtn = TextView(this).apply {
+                    text      = "🔍"
+                    textSize  = 15f
+                    gravity   = android.view.Gravity.CENTER
+                    setPadding(dpToPx(6), 0, 0, 0)
+                    val sz2 = dpToPx(34)
+                    layoutParams = LinearLayout.LayoutParams(sz2, sz2)
+                    isClickable = true
+                    isFocusable = true
+                }
+                destInputRow.addView(destLabel)
+                destInputRow.addView(destField)
+                destInputRow.addView(destSearchBtn)
+
+                // 확장 패널 (기본 GONE)
+                val expandPanel = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    visibility  = View.GONE
+                    background  = GradientDrawable().apply {
+                        setColor(if (isNightMode) Color.parseColor("#161622") else Color.parseColor("#F5F5F5"))
+                        cornerRadius = dpToPx(10).toFloat()
+                    }
+                    setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dpToPx(6) }
+                }
+                expandPanel.addView(originInputRow)
+                expandPanel.addView(destInputRow)
+
+                // 검색 동작
+                val doSearch = { field: android.widget.EditText, coords: DoubleArray ->
+                    val q = field.text.toString().trim()
+                    if (q.isEmpty()) Toast.makeText(this@MainActivity, "검색어를 입력하세요", Toast.LENGTH_SHORT).show()
+                    else searchAddressAndShow(q, field, coords)
+                }
+                originSearchBtn.setOnClickListener { doSearch(originField, originCoords) }
+                destSearchBtn.setOnClickListener   { doSearch(destField, destCoords) }
+                originField.setOnEditorActionListener { _, actionId, _ ->
+                    if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                        doSearch(originField, originCoords); true
+                    } else false
+                }
+                destField.setOnEditorActionListener { _, actionId, _ ->
+                    if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                        doSearch(destField, destCoords); true
+                    } else false
+                }
+
+                // ── + 토글 버튼 행 (안내시작 버튼 위, 오른쪽 정렬) ──────────
+                var isExpanded = false
+                val plusRow2 = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity     = android.view.Gravity.END
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dpToPx(4) }
+                }
+                val plusBtnSz = dpToPx(26)
+                val plusBtn = TextView(this).apply {
+                    text      = "+"
+                    textSize  = 14f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    gravity   = android.view.Gravity.CENTER
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.parseColor(if (isNightMode) "#37474F" else "#78909C"))
+                    }
+                    layoutParams = LinearLayout.LayoutParams(plusBtnSz, plusBtnSz)
+                    isClickable = true
+                    isFocusable = true
+                }
+                plusBtn.setOnClickListener {
+                    isExpanded = !isExpanded
+                    plusBtn.text = if (isExpanded) "−" else "+"
+                    if (isExpanded) {
+                        expandPanel.visibility = View.VISIBLE
+                        expandPanel.alpha = 0f
+                        expandPanel.animate().alpha(1f).setDuration(220).start()
+                    } else {
+                        expandPanel.animate().alpha(0f).setDuration(180)
+                            .withEndAction { expandPanel.visibility = View.GONE }.start()
+                    }
+                }
+                plusRow2.addView(plusBtn)
+
+                // ── 완료/안내시작 버튼 ──────────────────────────────────────
                 val completeBtnBg = GradientDrawable().apply {
                     setColor(if (isNightMode) Color.parseColor("#0D2137") else Color.parseColor("#E3F2FD"))
                     cornerRadius = dpToPx(12).toFloat()
@@ -1264,39 +1434,51 @@ class MainActivity : BaseActivity(),
                     elevation = 0f
                     layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f)
                     setOnClickListener {
-                        AlertDialog.Builder(this@MainActivity)
-                            .setTitle(getString(R.string.navi_origin_select_title))
-                            .setItems(arrayOf(
-                                getString(R.string.navi_origin_current_option),
-                                getString(R.string.navi_origin_address_option)
-                            )) { _, which ->
-                                when (which) {
-                                    0 -> {
-                                        currentNaviTripId = tripId
-                                        bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
-                                        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                                            optimizeAndStartNavi(
-                                                tripId, displayName, rawDestLat, rawDestLon,
-                                                loc?.latitude ?: lastLat.takeIf { it != 0.0 },
-                                                loc?.longitude ?: lastLng.takeIf { it != 0.0 }
-                                            )
-                                        }.addOnFailureListener {
-                                            optimizeAndStartNavi(
-                                                tripId, displayName, rawDestLat, rawDestLon,
-                                                lastLat.takeIf { it != 0.0 },
-                                                lastLng.takeIf { it != 0.0 }
-                                            )
-                                        }
-                                    }
-                                    1 -> showOriginAddressDialog(tripId, displayName, rawDestLat, rawDestLon)
+                        val originText = originField.text.toString().trim()
+                        val destText   = destField.text.toString().trim()
+                        currentNaviTripId = tripId
+                        bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+                        when {
+                            // 출발지가 검색으로 좌표까지 확정된 경우
+                            originText.isNotEmpty() && originCoords[0] != 0.0 -> {
+                                val oLat = originCoords[0]
+                                val oLon = originCoords[1]
+                                val dName = if (destText.isNotEmpty() && destCoords[0] != 0.0) destText else displayName
+                                val dLat  = if (destText.isNotEmpty() && destCoords[0] != 0.0) destCoords[0] else rawDestLat
+                                val dLon  = if (destText.isNotEmpty() && destCoords[0] != 0.0) destCoords[1] else rawDestLon
+                                optimizeAndStartNavi(tripId, dName, dLat, dLon, oLat, oLon, originText)
+                            }
+                            // 출발지 텍스트는 있지만 검색 미완료 → 자동 지오코딩 후 시작
+                            originText.isNotEmpty() -> {
+                                geocodeForStart(originText, destText, destCoords, tripId, displayName, rawDestLat, rawDestLon)
+                            }
+                            // 입력 없음 → GPS 현재 위치 사용
+                            else -> {
+                                val dName = if (destText.isNotEmpty() && destCoords[0] != 0.0) destText else displayName
+                                val dLat  = if (destText.isNotEmpty() && destCoords[0] != 0.0) destCoords[0] else rawDestLat
+                                val dLon  = if (destText.isNotEmpty() && destCoords[0] != 0.0) destCoords[1] else rawDestLon
+                                fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                                    optimizeAndStartNavi(
+                                        tripId, dName, dLat, dLon,
+                                        loc?.latitude ?: lastLat.takeIf { it != 0.0 },
+                                        loc?.longitude ?: lastLng.takeIf { it != 0.0 }
+                                    )
+                                }.addOnFailureListener {
+                                    optimizeAndStartNavi(
+                                        tripId, dName, dLat, dLon,
+                                        lastLat.takeIf { it != 0.0 },
+                                        lastLng.takeIf { it != 0.0 }
+                                    )
                                 }
                             }
-                            .setNegativeButton(getString(R.string.common_cancel), null)
-                            .show()
+                        }
                     }
                 }
                 btnRow.addView(completeBtn)
                 btnRow.addView(startBtn)
+
+                card.addView(expandPanel)
+                card.addView(plusRow2)
             }
             card.addView(btnRow)
             container.addView(card)
@@ -1664,6 +1846,114 @@ class MainActivity : BaseActivity(),
         if (::naviView.isInitialized) naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
     override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
         if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
+
+    /**
+     * 카카오 키워드 검색 API로 주소/장소를 검색하고 결과를 다이얼로그 목록으로 보여준다.
+     * 사용자가 선택하면 field 텍스트와 coords 배열(lat, lon)을 갱신한다.
+     */
+    private fun searchAddressAndShow(
+        query: String,
+        field: android.widget.EditText,
+        coords: DoubleArray
+    ) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+                val conn = URL("https://dapi.kakao.com/v2/local/search/keyword.json?query=$encoded&size=10")
+                    .openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
+                conn.connectTimeout = 8000; conn.readTimeout = 8000
+                if (conn.responseCode == 200) {
+                    val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                    val docs = json.getJSONArray("documents")
+                    if (docs.length() == 0) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "검색 결과가 없습니다.", Toast.LENGTH_SHORT).show()
+                        }
+                        return@launch
+                    }
+                    val labels = Array(docs.length()) { i ->
+                        val d     = docs.getJSONObject(i)
+                        val pname = d.optString("place_name", "")
+                        val addr  = d.optString("road_address_name", d.optString("address_name", ""))
+                        if (addr.isNotEmpty()) "$pname\n$addr" else pname
+                    }
+                    withContext(Dispatchers.Main) {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("장소 선택")
+                            .setItems(labels) { _, which ->
+                                val d     = docs.getJSONObject(which)
+                                val pname = d.optString("place_name", "")
+                                val addr  = d.optString("road_address_name", d.optString("address_name", ""))
+                                field.setText(if (pname.isNotEmpty()) pname else addr)
+                                coords[0] = d.optDouble("y", 0.0)  // WGS84 위도
+                                coords[1] = d.optDouble("x", 0.0)  // WGS84 경도
+                            }
+                            .setNegativeButton("취소", null)
+                            .show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "주소 검색에 실패했습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "검색 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    /**
+     * 출발지 텍스트를 /address/coord로 지오코딩한 뒤 네비게이션을 시작한다.
+     * 목적지(destText)에 좌표가 이미 있으면 그 값을 우선 사용한다.
+     */
+    private fun geocodeForStart(
+        originText: String, destText: String, destCoords: DoubleArray,
+        tripId: String, displayName: String, rawDestLat: Double, rawDestLon: Double
+    ) {
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+            .getString("access_token", null) ?: return
+        Toast.makeText(this, "출발지 검색 중...", Toast.LENGTH_SHORT).show()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val encoded = java.net.URLEncoder.encode(originText, "UTF-8")
+                val conn = URL("${Constants.BASE_URL}/address/coord?query=$encoded")
+                    .openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 8000; conn.readTimeout = 8000
+                if (conn.responseCode == 200) {
+                    val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                    val oLat = json.optDouble("lat", 0.0)
+                    val oLon = json.optDouble("lon", json.optDouble("lng", 0.0))
+                    if (oLat != 0.0 || oLon != 0.0) {
+                        withContext(Dispatchers.Main) {
+                            val dName = if (destText.isNotEmpty() && destCoords[0] != 0.0) destText else displayName
+                            val dLat  = if (destText.isNotEmpty() && destCoords[0] != 0.0) destCoords[0] else rawDestLat
+                            val dLon  = if (destText.isNotEmpty() && destCoords[0] != 0.0) destCoords[1] else rawDestLon
+                            optimizeAndStartNavi(tripId, dName, dLat, dLon, oLat, oLon, originText)
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity,
+                                "출발지를 찾을 수 없습니다. 다시 검색해 주세요.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "출발지 검색 실패", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     private fun showOriginAddressDialog(
         tripId: String, displayName: String, rawDestLat: Double, rawDestLon: Double
