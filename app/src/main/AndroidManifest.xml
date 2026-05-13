@@ -80,5 +80,9 @@
             android:foregroundServiceType="phoneCall"
             android:exported="false" />
 
+        <service
+            android:name=".ChatWebSocketService"
+            android:exported="false" />
+
     </application>
 </manifest>

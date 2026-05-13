@@ -65,8 +65,8 @@ class ChatWebSocketService : Service() {
 
         if (token.isNullOrEmpty()) return
 
-        // 💡 핵심 해결: HTTP 주소를 무조건 강제로 WS 주소로 변환하여 연결 보장
-        val wsUrl = Constants.WS_URL
+        // 수정된 부분: API 명세에 맞춰 엔드포인트(/ws/chat)와 토큰 파라미터 추가
+        val wsUrl = "${Constants.WS_URL}/ws/chat?token=$token"
 
         val request = Request.Builder().url(wsUrl).build()
 
@@ -82,7 +82,7 @@ class ChatWebSocketService : Service() {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("ChatWsService", "WS 연결 실패: ${t.message}")
+                Log.e("ChatWsService", "WS 연결 실패 원인 상세", t)
                 this@ChatWebSocketService.webSocket = null
                 scheduleReconnect()
             }

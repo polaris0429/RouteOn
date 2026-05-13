@@ -68,6 +68,7 @@ class ChatActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
         setupUI()
+        ChatWebSocketService.start(this)
 
         val cachedId = getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE).getString("chat_conversation_id", null)
         if (cachedId != null) {
