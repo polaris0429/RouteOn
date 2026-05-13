@@ -1197,9 +1197,9 @@ class MainActivity : BaseActivity(),
                         marginEnd = dpToPx(8)
                     }
                     setOnClickListener {
-                        getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-                            .edit().putString("cancel_trip_id", tripId).apply()
-                        startActivity(Intent(this@MainActivity, HelpActivity::class.java))
+                        val intent = Intent(this@MainActivity, HelpActivity::class.java)
+                        intent.putExtra("cancel_trip_id", tripId)
+                        startActivity(intent)
                     }
                 }
                 val acceptBtnBg = GradientDrawable().apply {

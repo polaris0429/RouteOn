@@ -21,6 +21,8 @@ import java.net.URL
 
 class HelpActivity : BaseActivity() {
 
+    private var cancelTripId: String? = null
+
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
@@ -29,6 +31,9 @@ class HelpActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_help)
         applySystemBarsColor()
+
+        // 배차 거절을 통해 진입한 경우 tripId 수신
+        cancelTripId = intent.getStringExtra("cancel_trip_id")
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         setSupportActionBar(toolbar)
@@ -107,46 +112,90 @@ class HelpActivity : BaseActivity() {
             .setTitle(R.string.dispatch_cancel)
             .setMessage(getString(R.string.help_cancel_confirm_message, reason))
             .setPositiveButton(R.string.common_yes) { _, _ ->
-                val prefs = getSharedPreferences("RouteOnPrefs", MODE_PRIVATE)
-                val token = prefs.getString("access_token", null)
-                val tripId = prefs.getString("cancel_trip_id", null)
+                val token = getSharedPreferences("RouteOnPrefs", MODE_PRIVATE)
+                    .getString("access_token", null)
 
-                if (token == null || tripId == null) {
-                    Toast.makeText(this, "취소할 운행 정보를 찾을 수 없습니다.", Toast.LENGTH_SHORT).show()
+                if (token.isNullOrEmpty()) {
+                    Toast.makeText(this, "로그인 정보가 없습니다.", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
 
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        val conn = URL("${Constants.BASE_URL}/trips/$tripId/status?status=cancelled")
-                            .openConnection() as HttpURLConnection
-                        conn.requestMethod = "PATCH"
-                        conn.setRequestProperty("Authorization", "Bearer $token")
-                        conn.connectTimeout = 8000
-                        conn.readTimeout = 8000
-
-                        val code = conn.responseCode
-                        withContext(Dispatchers.Main) {
-                            if (code in 200..204) {
-                                prefs.edit().remove("cancel_trip_id").apply()
-                                Toast.makeText(this@HelpActivity,
-                                    R.string.help_cancel_request_complete, Toast.LENGTH_SHORT).show()
-                                finish()
-                            } else {
-                                Toast.makeText(this@HelpActivity,
-                                    "취소 실패 (코드 $code)", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@HelpActivity,
-                                "네트워크 오류: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                if (!cancelTripId.isNullOrEmpty()) {
+                    // 배차 거절 버튼에서 Intent로 받은 tripId로 바로 취소
+                    executeCancelTrip(token, cancelTripId!!)
+                } else {
+                    // 일반 도움말 진입: 서버에서 현재 활성 운행 조회 후 취소
+                    fetchActiveTripAndCancel(token)
                 }
             }
             .setNegativeButton(R.string.common_no, null)
             .show()
+    }
+
+    private fun executeCancelTrip(token: String, tripId: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val conn = URL("${Constants.BASE_URL}/trips/$tripId/status?status=cancelled")
+                    .openConnection() as HttpURLConnection
+                conn.requestMethod = "PATCH"
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                val code = conn.responseCode
+                withContext(Dispatchers.Main) {
+                    if (code in 200..204) {
+                        cancelTripId = null
+                        Toast.makeText(this@HelpActivity,
+                            R.string.help_cancel_request_complete, Toast.LENGTH_SHORT).show()
+                        finish()
+                    } else {
+                        Toast.makeText(this@HelpActivity,
+                            "취소 실패 (코드 $code)", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@HelpActivity,
+                        "네트워크 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun fetchActiveTripAndCancel(token: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // scheduled 먼저, 없으면 in_progress 조회
+                var tripId: String? = null
+                for (status in listOf("scheduled", "in_progress")) {
+                    if (!tripId.isNullOrEmpty()) break
+                    val conn = URL("${Constants.BASE_URL}/trips?status=$status")
+                        .openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("Authorization", "Bearer $token")
+                    conn.connectTimeout = 8000
+                    conn.readTimeout = 8000
+                    if (conn.responseCode == 200) {
+                        val arr = org.json.JSONArray(conn.inputStream.bufferedReader().readText())
+                        if (arr.length() > 0) tripId = arr.getJSONObject(0).optString("id")
+                    }
+                }
+
+                if (!tripId.isNullOrEmpty()) {
+                    executeCancelTrip(token, tripId)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@HelpActivity,
+                            "취소할 운행이 없습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@HelpActivity,
+                        "네트워크 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun showOtherInquiryDialog() {
