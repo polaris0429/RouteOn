@@ -17,6 +17,7 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -83,6 +84,7 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 data class RouteStop(
     val id: String, val name: String,
@@ -106,9 +108,6 @@ class MainActivity : BaseActivity(),
     private val httpClient = OkHttpClient()
     private var webSocket: WebSocket? = null
 
-    // WebSocket 전용 클라이언트 — 앱 생명주기 동안 재사용, 타임아웃 없음
-    // pingInterval 제거: 서버(uvicorn --ws-ping-interval 20)가 PING을 보내고
-    // OkHttp가 자동으로 PONG 응답 → 양쪽 동시 PING 충돌 방지
     private val wsHttpClient = OkHttpClient.Builder()
         .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
         .writeTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -138,8 +137,29 @@ class MainActivity : BaseActivity(),
     private val knownTripStatuses = mutableMapOf<String, String>()
     private var isFirstFetch = true
 
-    // ✅ 다이얼로그 중복/누수 방지 변수
     private var permissionDialog: AlertDialog? = null
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 휴게소 휴식 관련 상태
+    // ─────────────────────────────────────────────────────────────────────────
+    /** 현재 휴식 오버레이가 표시 중인지 여부 */
+    private var isRestStopActive = false
+
+    /** 15분 카운트다운 타이머 (휴식 오버레이용) */
+    private var restStopCountDown: CountDownTimer? = null
+
+    /**
+     * 이미 휴식을 시작한 휴게소의 고유 키 (lat_lng) 집합.
+     * 같은 휴게소에서 타이머가 끝난 뒤 다시 150m 안에 들어와도 재발동하지 않도록 방지.
+     */
+    private val visitedRestStopKeys = mutableSetOf<String>()
+
+    /** 휴식 감지 반경 (미터) */
+    private val REST_STOP_RADIUS_M = 150f
+
+    /** 휴식 시간 (밀리초) — 15분 */
+    private val REST_STOP_DURATION_MS = 15 * 60 * 1000L
+    // ─────────────────────────────────────────────────────────────────────────
 
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -160,13 +180,11 @@ class MainActivity : BaseActivity(),
         } catch (_: Exception) { }
     }
 
-    // ✅ 마지막 위치 저장 변수 (Replan 시 lastLocation이 null일 때 대비)
     private var lastLat: Double = 0.0
     private var lastLng: Double = 0.0
 
     private var isLocationWsReconnecting = false
 
-    // 배차 수락 상태 변수 — 수락 후 출발지 선택 완료까지 유지
     private var acceptedTripId: String? = null
     private var acceptedOriginName: String = "실내 위치"
     private var acceptedOriginLat: Double = 0.0
@@ -208,11 +226,9 @@ class MainActivity : BaseActivity(),
         connectWebSocket()
         refreshHandler.post(refreshRunnable)
 
-        // ✅ 앱 시작 시 기본 권한부터 한 번에 요청
         requestAllBasicPermissions()
     }
 
-    // ✅ 기본 권한(위치, 전화) 통합 요청
     private fun requestAllBasicPermissions() {
         val permissionsToRequest = mutableListOf<String>()
 
@@ -230,14 +246,12 @@ class MainActivity : BaseActivity(),
         if (permissionsToRequest.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, permissionsToRequest.toTypedArray(), permissionRequestCode)
         } else {
-            // 모든 기본 권한이 이미 허용되어 있다면 내비게이션 초기화 및 특수 권한 체크
             initKakaoNaviSDK()
             startLocationUpdates()
             checkSpecialPermissions()
         }
     }
 
-    // ✅ 권한 응답 결과 처리
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
@@ -252,7 +266,6 @@ class MainActivity : BaseActivity(),
             if (locationGranted) {
                 initKakaoNaviSDK()
                 startLocationUpdates()
-                // 위치 등 기본 권한을 받았으면 특수 권한(오버레이 등) 체크를 이어서 진행
                 checkSpecialPermissions()
             } else {
                 Toast.makeText(this, getString(R.string.navi_location_permission), Toast.LENGTH_LONG).show()
@@ -261,7 +274,6 @@ class MainActivity : BaseActivity(),
         }
     }
 
-    // ✅ 오버레이 및 알림 접근 권한 팝업 제어
     private fun checkSpecialPermissions() {
         if (isFinishing || isDestroyed) return
 
@@ -339,7 +351,6 @@ class MainActivity : BaseActivity(),
             sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
         }
 
-        // 앱으로 돌아왔을 때, 기본 위치 권한이 있다면 특수 권한 팝업 진행 여부 확인
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             checkSpecialPermissions()
         }
@@ -353,8 +364,6 @@ class MainActivity : BaseActivity(),
     override fun onPause() {
         super.onPause()
         sensorManager.unregisterListener(this)
-
-        // 🚨 화면 넘어갈 때 메모리 누수(WindowLeaked) 방지
         permissionDialog?.dismiss()
     }
 
@@ -363,12 +372,13 @@ class MainActivity : BaseActivity(),
         refreshHandler.removeCallbacks(refreshRunnable)
         webSocket?.cancel()
         sensorManager.unregisterListener(this)
-
-        // 🚨 액티비티 파괴 시 팝업 닫기
         permissionDialog?.dismiss()
         permissionDialog = null
 
-        // 🚨 위치 콜백 초기화 전에 호출하면 죽는 에러 방지
+        // 휴게소 타이머 정리
+        restStopCountDown?.cancel()
+        restStopCountDown = null
+
         if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
         }
@@ -463,13 +473,168 @@ class MainActivity : BaseActivity(),
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 휴게소 휴식 오버레이 표시
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 휴게소 진입 시 호출.
+     * 네비 화면을 흐리게 만들고 15분 카운트다운 오버레이를 표시한다.
+     */
+    private fun showRestStopOverlay(stopName: String) {
+        if (isRestStopActive) return
+        isRestStopActive = true
+
+        // 진행 중이던 배송 완료 버튼 숨기기
+        binding.btnCompleteTrip.visibility = View.GONE
+
+        // 네비 뷰를 어둡게 dim — 블러 대신 alpha 처리
+        binding.naviContainer.animate()
+            .alpha(0.12f)
+            .setDuration(450)
+            .start()
+
+        // 오버레이 내용 설정
+        binding.tvRestStopName.text = if (stopName.isNotBlank()) stopName else "휴게소"
+        binding.tvRestTimer.text = "15:00"
+
+        // 오버레이 페이드 인
+        binding.restStopOverlay.alpha = 0f
+        binding.restStopOverlay.visibility = View.VISIBLE
+        binding.restStopOverlay.animate()
+            .alpha(1f)
+            .setDuration(450)
+            .start()
+
+        // 진동 (설정 무관하게 한 번만)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager)
+                    .defaultVibrator.vibrate(
+                        VibrationEffect.createWaveform(longArrayOf(0, 300, 200, 300), -1)
+                    )
+            } else {
+                @Suppress("DEPRECATION")
+                val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 200, 300), -1))
+                else { @Suppress("DEPRECATION") v.vibrate(longArrayOf(0, 300, 200, 300), -1) }
+            }
+        } catch (_: Exception) { }
+
+        // 15분 카운트다운 시작
+        restStopCountDown?.cancel()
+        restStopCountDown = object : CountDownTimer(REST_STOP_DURATION_MS, 1000) {
+            override fun onTick(millisUntilFinished: Long) {
+                val totalSec = millisUntilFinished / 1000
+                val mins = totalSec / 60
+                val secs = totalSec % 60
+                binding.tvRestTimer.text = String.format(Locale.US, "%02d:%02d", mins, secs)
+
+                // 남은 시간 1분 이하면 타이머 색상을 주황으로 변경
+                if (totalSec <= 60) {
+                    binding.tvRestTimer.setTextColor(Color.parseColor("#FF9800"))
+                }
+            }
+
+            override fun onFinish() {
+                binding.tvRestTimer.text = "00:00"
+                hideRestStopOverlay()
+            }
+        }.start()
+
+        Log.d("RestStop", "✅ 휴게소 진입: $stopName — 15분 타이머 시작")
+    }
+
+    /**
+     * 15분 경과 후 호출.
+     * 네비 화면을 복구하고 오버레이를 숨긴다.
+     */
+    private fun hideRestStopOverlay() {
+        isRestStopActive = false
+        restStopCountDown?.cancel()
+        restStopCountDown = null
+
+        // 타이머 색상 초기화 (다음 진입을 위해)
+        binding.tvRestTimer.setTextColor(Color.parseColor("#4CAF50"))
+
+        // 네비 뷰 alpha 복구
+        binding.naviContainer.animate()
+            .alpha(1f)
+            .setDuration(600)
+            .start()
+
+        // 오버레이 페이드 아웃
+        binding.restStopOverlay.animate()
+            .alpha(0f)
+            .setDuration(600)
+            .withEndAction {
+                binding.restStopOverlay.visibility = View.GONE
+            }
+            .start()
+
+        Toast.makeText(
+            this,
+            "✅ 휴식이 완료되었습니다. 안전 운행하세요! 🚛",
+            Toast.LENGTH_LONG
+        ).show()
+
+        Log.d("RestStop", "✅ 휴식 완료 — 네비 복구")
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 근처 정류장 감지 (배달 완료 버튼 + 휴게소 감지 통합)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * GPS 위치 업데이트마다 호출.
+     *
+     * 우선순위:
+     * 1. rest_stop 150m 이내 → 미방문 시 휴식 오버레이 표시 (오버레이 중엔 배송 버튼 숨김)
+     * 2. 그 외 정류장 100m 이내 → 배송/도착 완료 버튼 표시
+     */
     private fun checkProximityToStops(currentLat: Double, currentLng: Double) {
+
+        // ── 1. 휴게소 감지 (150m, 미방문 조건) ──────────────────────────────
+        if (!isRestStopActive) {
+            for (stop in currentStops) {
+                if (stop.type != "rest_stop") continue
+
+                val key = "${stop.lat}_${stop.lng}"
+                if (key in visitedRestStopKeys) continue  // 이미 방문한 휴게소
+
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(
+                    currentLat, currentLng, stop.lat, stop.lng, dist
+                )
+                if (dist[0] <= REST_STOP_RADIUS_M) {
+                    // 방문 목록에 추가 (타이머 종료 후 재진입 방지)
+                    visitedRestStopKeys.add(key)
+                    Log.d("RestStop", "📍 휴게소 감지: ${stop.name} (${dist[0].toInt()}m)")
+                    runOnUiThread { showRestStopOverlay(stop.name) }
+                    return  // 이번 위치 업데이트 처리 종료
+                }
+            }
+        }
+
+        // ── 2. 휴식 중이면 배송 완료 버튼 강제 숨김 ────────────────────────
+        if (isRestStopActive) {
+            runOnUiThread { binding.btnCompleteTrip.visibility = View.GONE }
+            return
+        }
+
+        // ── 3. 배송/상차/목적지 100m 이내 감지 ─────────────────────────────
         var nearbyStop: RouteStop? = null
         for (stop in currentStops) {
-            val r = FloatArray(1)
-            android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, r)
-            if (r[0] <= 100) { nearbyStop = stop; break }
+            if (stop.type == "rest_stop") continue  // 휴게소는 여기서 제외
+
+            val dist = FloatArray(1)
+            android.location.Location.distanceBetween(
+                currentLat, currentLng, stop.lat, stop.lng, dist
+            )
+            if (dist[0] <= 100) { nearbyStop = stop; break }
         }
+
         runOnUiThread {
             if (nearbyStop != null) {
                 binding.btnCompleteTrip.visibility = View.VISIBLE
@@ -506,12 +671,12 @@ class MainActivity : BaseActivity(),
         }
     }
 
-    // ✅ WebSocket 수정 부분 (Ping 유지 및 lastLocation 안전장치 추가)
+    // ─────────────────────────────────────────────────────────────────────────
+
     private fun connectWebSocket() {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
 
-        // 재연결 시 기존 소켓 명시적으로 닫기
         webSocket?.cancel()
         webSocket = null
 
@@ -527,7 +692,6 @@ class MainActivity : BaseActivity(),
 
             @SuppressLint("MissingPermission")
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // 1. 서버가 보낸 원본 메시지를 그대로 모두 출력합니다.
                 Log.d("LocationWS", "📩 [전체 메시지 수신] $text")
 
                 try {
@@ -535,7 +699,6 @@ class MainActivity : BaseActivity(),
                     val msgType = json.optString("type")
                     Log.d("LocationWS", "🔍 메시지 타입(type): $msgType")
 
-                    // 서버 heartbeat ping → pong 즉시 응답 (연결 유지)
                     if (msgType == "ping") {
                         webSocket.send("""{"type":"pong"}""")
                         return
@@ -544,13 +707,11 @@ class MainActivity : BaseActivity(),
                     if (msgType == "replan_requested") {
                         Log.d("LocationWS", "🚨 [Replan] 경유지 추가(재탐색) 요청 진입!")
 
-                        // 서버 메시지 구조에 맞춰 데이터 파싱
                         val tripId = json.optString("trip_id")
                         val driverId = json.optString("driver_id")
                         val message = json.optString("message", getString(R.string.navi_replan_title))
                         val wps = json.optJSONArray("waypoints") ?: JSONArray()
 
-                        // 2. 추가된 경유지 정보(new_waypoint) 상세 로깅
                         val newWaypoint = json.optJSONObject("new_waypoint")
                         if (newWaypoint != null) {
                             val wpName = newWaypoint.optString("name")
@@ -600,7 +761,6 @@ class MainActivity : BaseActivity(),
                             Log.d("LocationWS", "🚨 [Replan] 화면에 팝업 정상 노출됨")
                         }
                     } else {
-                        // 기타 메시지 (도착 처리 등)
                         val arr = json.optJSONArray("arrived_deliveries")
                         if (arr != null && arr.length() > 0) {
                             runOnUiThread {
@@ -624,19 +784,15 @@ class MainActivity : BaseActivity(),
                 try {
                     Log.e("LocationWS", "❌ 웹소켓 에러: ${t.message}")
                     Log.e("LocationWS", "❌ response: ${response?.code} ${response?.message}")
-
                     val bodyText = try {
                         response?.peekBody(Long.MAX_VALUE)?.string()
                     } catch (e: Exception) {
                         "body read fail: ${e.message}"
                     }
-
                     Log.e("LocationWS", "❌ body: $bodyText")
-
                 } catch (e: Exception) {
                     Log.e("LocationWS", "❌ onFailure 내부 오류: ${e.message}")
                 }
-
                 scheduleWsReconnect()
             }
         })
@@ -653,7 +809,6 @@ class MainActivity : BaseActivity(),
         }, 3000)
     }
 
-    // ✅ Replan 요청 로직 수정 (lon / lng 예외 처리)
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, wps: JSONArray) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
@@ -690,7 +845,6 @@ class MainActivity : BaseActivity(),
                     val destWp = wps.getJSONObject(destIdx)
                     dName = destWp.optString("name", "목적지")
                     dLat  = destWp.optDouble("lat", 0.0)
-                    // lon 우선, 없으면 lng 사용
                     dLon  = destWp.optDouble("lon", destWp.optDouble("lng", 0.0))
 
                     for (i in 0 until wps.length()) {
@@ -772,7 +926,6 @@ class MainActivity : BaseActivity(),
                 }
             }
         }
-        // 수락한 배차가 scheduled 상태를 벗어나면(취소/완료/기타) acceptedTripId 자동 초기화
         if (acceptedTripId != null && newStatuses[acceptedTripId] != "scheduled") {
             acceptedTripId = null
             acceptedOriginLat = 0.0
@@ -784,11 +937,9 @@ class MainActivity : BaseActivity(),
         renderRunList(jsonArray)
     }
 
-    // ── 헬퍼: dp → px ───────────────────────────────────────────────────────
     private fun dpToPx(dp: Int): Int =
         (dp * resources.displayMetrics.density + 0.5f).toInt()
 
-    // ── 헬퍼: 작은 칩 뷰 생성 ───────────────────────────────────────────────
     private fun makeChip(label: String, textHex: String, bgHex: String): TextView {
         return TextView(this).apply {
             text = label
@@ -812,7 +963,6 @@ class MainActivity : BaseActivity(),
         val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
         container.removeAllViews()
 
-        // 진행 중 / 대기 항목만 표시
         val activeItems = mutableListOf<JSONObject>()
         for (i in 0 until jsonArray.length()) {
             val obj = jsonArray.getJSONObject(i)
@@ -837,7 +987,6 @@ class MainActivity : BaseActivity(),
 
         activeItems.forEachIndexed { index, obj ->
             val tripId     = obj.optString("id", "")
-            // optString 이 JSON null 을 "null" 문자열로 반환하는 경우 방어
             val rawDestName = obj.optString("dest_name", "").let {
                 if (it == "null" || it.isBlank()) "" else it
             }
@@ -846,7 +995,6 @@ class MainActivity : BaseActivity(),
             val loadingCount   = obj.optInt("loading_count", 0)
             val unloadingCount = obj.optInt("unloading_count", 0)
 
-            // optimized_route.route 배열에서 destination 타입 노드의 이름 추출
             val optimizedRoute = obj.optJSONObject("optimized_route")
             val routeArr       = optimizedRoute?.optJSONArray("route")
             val destFromRoute: String? = if (routeArr != null) {
@@ -857,17 +1005,14 @@ class MainActivity : BaseActivity(),
                     ?.let { if (it == "null" || it.isBlank()) null else it }
             } else null
 
-            // waypoints 배열에서 마지막 하차지(unloading) 이름 추출
             val waypointsArr = obj.optJSONArray("waypoints")
             val destFromWaypoints: String? = if (waypointsArr != null && waypointsArr.length() > 0) {
                 val wpList = (0 until waypointsArr.length()).map { waypointsArr.getJSONObject(it) }
-                // 마지막 unloading → 없으면 마지막 항목
                 val candidate = wpList.lastOrNull { it.optString("type", "unloading") == "unloading" }
                     ?: wpList.last()
                 candidate.optString("name", "").let { if (it == "null" || it.isBlank()) null else it }
             } else null
 
-            // 우선순위: dest_name → optimized_route 목적지 → waypoints 마지막 → 건수 폴백
             val displayName = rawDestName.takeIf { it.isNotEmpty() }
                 ?: destFromRoute
                 ?: destFromWaypoints
@@ -886,7 +1031,6 @@ class MainActivity : BaseActivity(),
                 "cancelled"   -> getString(R.string.navi_status_cancelled)
                 else          -> status
             }
-            // 상태별 색상
             val (statusTextColor, statusBgColor) = if (isNightMode) {
                 when (status) {
                     "in_progress" -> Pair("#FFB74D", "#3E2000")
@@ -899,7 +1043,6 @@ class MainActivity : BaseActivity(),
                 }
             }
 
-            // ── 카드 컨테이너 ─────────────────────────────────────────────────
             val cardBg = GradientDrawable().apply {
                 setColor(if (isNightMode) Color.parseColor("#1E1E2A") else Color.WHITE)
                 cornerRadius = dpToPx(16).toFloat()
@@ -919,7 +1062,6 @@ class MainActivity : BaseActivity(),
                 }
             }
 
-            // ── 헤더 행: 번호 원 + 목적지 이름 + 상태 뱃지 ──────────────────
             val headerRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity     = android.view.Gravity.CENTER_VERTICAL
@@ -929,7 +1071,6 @@ class MainActivity : BaseActivity(),
                 )
             }
 
-            // 번호 원형 뱃지
             val circleSize = dpToPx(30)
             val indexView = TextView(this).apply {
                 text    = "${index + 1}"
@@ -946,7 +1087,6 @@ class MainActivity : BaseActivity(),
                 }
             }
 
-            // 목적지 이름
             val nameView = TextView(this).apply {
                 text    = displayName
                 textSize = 16f
@@ -957,7 +1097,6 @@ class MainActivity : BaseActivity(),
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
 
-            // 상태 뱃지
             val statusBadge = TextView(this).apply {
                 text    = statusText
                 textSize = 11f
@@ -979,7 +1118,6 @@ class MainActivity : BaseActivity(),
             headerRow.addView(statusBadge)
             card.addView(headerRow)
 
-            // ── 상차/하차 칩 행 ──────────────────────────────────────────────
             if (loadingCount > 0 || unloadingCount > 0) {
                 val chipRow = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -1006,7 +1144,6 @@ class MainActivity : BaseActivity(),
                 card.addView(chipRow)
             }
 
-            // ── 구분선 ───────────────────────────────────────────────────────
             card.addView(View(this).apply {
                 setBackgroundColor(
                     if (isNightMode) Color.parseColor("#2E2E3A") else Color.parseColor("#F0F0F0")
@@ -1016,7 +1153,6 @@ class MainActivity : BaseActivity(),
                 ).apply { topMargin = dpToPx(16); bottomMargin = dpToPx(14) }
             })
 
-            // ── 버튼 행 ──────────────────────────────────────────────────────
             val btnRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
@@ -1024,7 +1160,6 @@ class MainActivity : BaseActivity(),
                 )
             }
 
-            // 배차 상태별 분기: scheduled+미수락 → [배차 거절][배차 수락] / 그 외 → [운행 완료][안내 시작]
             if (status == "scheduled" && tripId != acceptedTripId) {
                 val rejectBtnBg = GradientDrawable().apply {
                     setColor(if (isNightMode) Color.parseColor("#2D0A0A") else Color.parseColor("#FFF5F5"))
@@ -1068,7 +1203,6 @@ class MainActivity : BaseActivity(),
                 btnRow.addView(rejectBtn)
                 btnRow.addView(acceptBtn)
             } else {
-                // 수락됨(예약+수락) 또는 운행 중(in_progress): [운행 완료] [안내 시작]
                 val completeBtnBg = GradientDrawable().apply {
                     setColor(if (isNightMode) Color.parseColor("#0D2137") else Color.parseColor("#E3F2FD"))
                     cornerRadius = dpToPx(12).toFloat()
@@ -1173,11 +1307,15 @@ class MainActivity : BaseActivity(),
     private fun optimizeAndStartNavi(
         tripId: String, destName: String, destLat: Double, destLng: Double,
         currentLat: Double?, currentLng: Double?,
-        originNameForBackend: String? = null  // ✨ 백엔드 전송 여부를 결정할 파라미터 추가
+        originNameForBackend: String? = null
     ) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
         Toast.makeText(this, getString(R.string.navi_optimizing), Toast.LENGTH_LONG).show()
+
+        // 새 운행 시작 시 방문 휴게소 목록 초기화
+        visitedRestStopKeys.clear()
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = URL("${Constants.BASE_URL}/optimize").openConnection() as HttpURLConnection
@@ -1189,29 +1327,21 @@ class MainActivity : BaseActivity(),
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply {
                         put("trip_id", tripId)
-
-                        // ✨ originNameForBackend 값이 전달되었을 때(직접 입력)만 백엔드로 전송
                         if (originNameForBackend != null && currentLat != null && currentLng != null) {
                             put("origin_name", originNameForBackend)
                             put("origin_lat",  currentLat)
                             put("origin_lon",  currentLng)
                         }
-
                         put("initial_drive_sec", 0)
                         put("is_emergency", false)
                     }.toString())
                 }
 
                 if (conn.responseCode in 200..201) {
-                    // 1. 스트림에서 데이터를 한 번만 읽어서 변수에 저장합니다.
                     val responseString = conn.inputStream.bufferedReader().readText()
-
-                    // 2. 로그에 원본 JSON을 출력합니다.
                     Log.d("NaviLog", "✅ 서버 응답 JSON 원본: $responseString")
-
-                    // 3. 다시 읽지 말고, 이미 저장해둔 문자열 변수를 넘겨줍니다.
                     parseAndStartNavi(
-                        JSONObject(responseString), // ✨ 여기를 수정했습니다.
+                        JSONObject(responseString),
                         currentLat ?: 0.0, currentLng ?: 0.0,
                         destName, destLat, destLng
                     )
@@ -1433,8 +1563,6 @@ class MainActivity : BaseActivity(),
                 }
                 OutputStreamWriter(conn.outputStream).use { it.write(jp.toString()) }
                 conn.responseCode
-                // GPS 데이터는 HTTP POST(/location-logs)로만 전송
-                // WebSocket으로도 보낼 경우 서버 WS 핸들러가 예상치 못한 메시지로 인식해 연결 종료
             } catch (e: Exception) { }
         }
     }
@@ -1516,6 +1644,7 @@ class MainActivity : BaseActivity(),
         if (::naviView.isInitialized) naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
     override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) {
         if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
+
     private fun showOriginAddressDialog(
         tripId: String, displayName: String, rawDestLat: Double, rawDestLon: Double
     ) {
@@ -1552,7 +1681,6 @@ class MainActivity : BaseActivity(),
                                 withContext(Dispatchers.Main) {
                                     currentNaviTripId = tripId
                                     bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
-                                    // ✨ 맨 뒤에 address를 추가하여 백엔드 전송 트리거
                                     optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon, lat, lon, address)
                                 }
                             } else {
