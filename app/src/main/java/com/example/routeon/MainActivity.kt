@@ -192,6 +192,16 @@ class MainActivity : BaseActivity(),
     private var acceptedOriginLat: Double = 0.0
     private var acceptedOriginLon: Double = 0.0
 
+    /** + 버튼으로 펼쳐진 패널의 tripId 집합 — renderRunList 재호출 시도 상태 유지 */
+    private val expandedTripIds = mutableSetOf<String>()
+
+    /** 출발지/목적지 입력 필드 내용 — renderRunList 재호출 시 복원용 */
+    private val tripOriginText  = mutableMapOf<String, String>()
+    private val tripDestText    = mutableMapOf<String, String>()
+    /** 출발지/목적지 검색 좌표 — 배열 참조 공유로 재빌드 후에도 유지 */
+    private val tripOriginCoords = mutableMapOf<String, DoubleArray>()
+    private val tripDestCoords   = mutableMapOf<String, DoubleArray>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -906,18 +916,40 @@ class MainActivity : BaseActivity(),
 
     private fun fetchTrips() {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-            .getString("access_token", null) ?: return
+            .getString("access_token", null)
+        if (token == null) {
+            Log.w("FetchTrips", "⚠️ access_token 없음 — 로그인 필요")
+            return
+        }
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = URL("${Constants.BASE_URL}/trips").openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.connectTimeout = 5000; conn.readTimeout = 5000
-                if (conn.responseCode == 200) {
-                    val jsonArray = JSONArray(conn.inputStream.bufferedReader().readText())
-                    withContext(Dispatchers.Main) { processTripsUpdate(jsonArray) }
+                conn.connectTimeout = 8000; conn.readTimeout = 8000
+                val code = conn.responseCode
+                Log.d("FetchTrips", "📡 GET /trips → HTTP $code")
+                when (code) {
+                    200 -> {
+                        val body = conn.inputStream.bufferedReader().readText()
+                        Log.d("FetchTrips", "✅ 응답 (${body.length}자): ${body.take(200)}")
+                        val jsonArray = JSONArray(body)
+                        withContext(Dispatchers.Main) { processTripsUpdate(jsonArray) }
+                    }
+                    401 -> {
+                        Log.e("FetchTrips", "🔒 401 Unauthorized — 토큰 만료")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "세션이 만료되었습니다. 다시 로그인해 주세요.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    else -> {
+                        val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                        Log.e("FetchTrips", "❌ HTTP $code 오류: $err")
+                    }
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                Log.e("FetchTrips", "💥 네트워크 예외: ${e::class.simpleName}: ${e.message}")
+            }
         }
     }
 
@@ -980,6 +1012,16 @@ class MainActivity : BaseActivity(),
 
     @SuppressLint("SetTextI18n", "MissingPermission")
     private fun renderRunList(jsonArray: JSONArray) {
+        // ── EditText에 포커스가 있으면 재빌드 건너뜀 (키보드·입력 방해 방지) ──
+        val focused = currentFocus
+        if (focused is android.widget.EditText) {
+            val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
+            var v: android.view.View? = focused
+            while (v != null) {
+                if (v === container) return   // 목록 내 EditText → 재빌드 스킵
+                v = v.parent as? android.view.View
+            }
+        }
         val container = binding.root.findViewById<LinearLayout>(R.id.run_list_container)
         container.removeAllViews()
 
@@ -1224,8 +1266,8 @@ class MainActivity : BaseActivity(),
                 btnRow.addView(acceptBtn)
             } else {
                 // ── 출발지/목적지 입력 패널 (+ 버튼으로 토글) ─────────────────
-                val originCoords = doubleArrayOf(0.0, 0.0)  // [lat, lon]
-                val destCoords   = doubleArrayOf(0.0, 0.0)  // [lat, lon]
+                val originCoords = tripOriginCoords.getOrPut(tripId) { doubleArrayOf(0.0, 0.0) }
+                val destCoords   = tripDestCoords.getOrPut(tripId)   { doubleArrayOf(0.0, 0.0) }
 
                 // 출발지 입력 행
                 val originInputRow = LinearLayout(this).apply {
@@ -1248,6 +1290,7 @@ class MainActivity : BaseActivity(),
                     textSize     = 13f
                     maxLines     = 1
                     isSingleLine = true
+                    setText(tripOriginText[tripId] ?: "")
                     setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
                     setHintTextColor(Color.parseColor(if (isNightMode) "#666666" else "#AAAAAA"))
                     background = GradientDrawable().apply {
@@ -1258,6 +1301,11 @@ class MainActivity : BaseActivity(),
                     imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
+                originField.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun afterTextChanged(s: android.text.Editable?) { tripOriginText[tripId] = s?.toString() ?: "" }
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                })
                 val originSearchBtn = TextView(this).apply {
                     text      = "🔍"
                     textSize  = 15f
@@ -1293,6 +1341,7 @@ class MainActivity : BaseActivity(),
                     textSize     = 13f
                     maxLines     = 1
                     isSingleLine = true
+                    setText(tripDestText[tripId] ?: "")
                     setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
                     setHintTextColor(Color.parseColor(if (isNightMode) "#666666" else "#AAAAAA"))
                     background = GradientDrawable().apply {
@@ -1303,6 +1352,11 @@ class MainActivity : BaseActivity(),
                     imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
+                destField.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun afterTextChanged(s: android.text.Editable?) { tripDestText[tripId] = s?.toString() ?: "" }
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                })
                 val destSearchBtn = TextView(this).apply {
                     text      = "🔍"
                     textSize  = 15f
@@ -1317,10 +1371,10 @@ class MainActivity : BaseActivity(),
                 destInputRow.addView(destField)
                 destInputRow.addView(destSearchBtn)
 
-                // 확장 패널 (기본 GONE)
+                // 확장 패널 — expandedTripIds에 있으면 열린 채로 복원
                 val expandPanel = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    visibility  = View.GONE
+                    visibility  = if (tripId in expandedTripIds) View.VISIBLE else View.GONE
                     background  = GradientDrawable().apply {
                         setColor(if (isNightMode) Color.parseColor("#161622") else Color.parseColor("#F5F5F5"))
                         cornerRadius = dpToPx(10).toFloat()
@@ -1334,27 +1388,30 @@ class MainActivity : BaseActivity(),
                 expandPanel.addView(originInputRow)
                 expandPanel.addView(destInputRow)
 
-                // 검색 동작
-                val doSearch = { field: android.widget.EditText, coords: DoubleArray ->
+                // 검색 결과 선택 시 text도 Map에 저장
+                val doSearch = { field: android.widget.EditText, coords: DoubleArray, isOrigin: Boolean ->
                     val q = field.text.toString().trim()
                     if (q.isEmpty()) Toast.makeText(this@MainActivity, "검색어를 입력하세요", Toast.LENGTH_SHORT).show()
-                    else searchAddressAndShow(q, field, coords)
+                    else searchAddressAndShow(q, field, coords) { selectedText ->
+                        if (isOrigin) tripOriginText[tripId] = selectedText
+                        else          tripDestText[tripId]   = selectedText
+                    }
                 }
-                originSearchBtn.setOnClickListener { doSearch(originField, originCoords) }
-                destSearchBtn.setOnClickListener   { doSearch(destField, destCoords) }
+                originSearchBtn.setOnClickListener { doSearch(originField, originCoords, true) }
+                destSearchBtn.setOnClickListener   { doSearch(destField, destCoords, false) }
                 originField.setOnEditorActionListener { _, actionId, _ ->
                     if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
-                        doSearch(originField, originCoords); true
+                        doSearch(originField, originCoords, true); true
                     } else false
                 }
                 destField.setOnEditorActionListener { _, actionId, _ ->
                     if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
-                        doSearch(destField, destCoords); true
+                        doSearch(destField, destCoords, false); true
                     } else false
                 }
 
                 // ── + 토글 버튼 행 (안내시작 버튼 위, 오른쪽 정렬) ──────────
-                var isExpanded = false
+                var isExpanded = tripId in expandedTripIds
                 val plusRow2 = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity     = android.view.Gravity.END
@@ -1365,7 +1422,7 @@ class MainActivity : BaseActivity(),
                 }
                 val plusBtnSz = dpToPx(26)
                 val plusBtn = TextView(this).apply {
-                    text      = "+"
+                    text      = if (tripId in expandedTripIds) "−" else "+"
                     textSize  = 14f
                     setTypeface(null, android.graphics.Typeface.BOLD)
                     setTextColor(Color.WHITE)
@@ -1380,6 +1437,8 @@ class MainActivity : BaseActivity(),
                 }
                 plusBtn.setOnClickListener {
                     isExpanded = !isExpanded
+                    // Activity 레벨 Set에서 상태 유지 — 5초 주기 renderRunList 재호출돼도 패널 유지
+                    if (isExpanded) expandedTripIds.add(tripId) else expandedTripIds.remove(tripId)
                     plusBtn.text = if (isExpanded) "−" else "+"
                     if (isExpanded) {
                         expandPanel.visibility = View.VISIBLE
@@ -1854,7 +1913,8 @@ class MainActivity : BaseActivity(),
     private fun searchAddressAndShow(
         query: String,
         field: android.widget.EditText,
-        coords: DoubleArray
+        coords: DoubleArray,
+        onSelected: ((String) -> Unit)? = null
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -1886,9 +1946,11 @@ class MainActivity : BaseActivity(),
                                 val d     = docs.getJSONObject(which)
                                 val pname = d.optString("place_name", "")
                                 val addr  = d.optString("road_address_name", d.optString("address_name", ""))
-                                field.setText(if (pname.isNotEmpty()) pname else addr)
+                                val selected = if (pname.isNotEmpty()) pname else addr
+                                field.setText(selected)
                                 coords[0] = d.optDouble("y", 0.0)  // WGS84 위도
                                 coords[1] = d.optDouble("x", 0.0)  // WGS84 경도
+                                onSelected?.invoke(selected)
                             }
                             .setNegativeButton("취소", null)
                             .show()
