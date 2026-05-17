@@ -96,7 +96,8 @@ class MainActivity : BaseActivity(),
     KNGuidance_GuideStateDelegate, KNGuidance_LocationGuideDelegate,
     KNGuidance_RouteGuideDelegate, KNGuidance_SafetyGuideDelegate,
     KNGuidance_VoiceGuideDelegate, KNGuidance_CitsGuideDelegate,
-    SensorEventListener {
+    SensorEventListener,
+    BaseActivity.DevRestModeCallback {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var naviView: KNNaviView
@@ -161,6 +162,9 @@ class MainActivity : BaseActivity(),
 
     /** 휴식 시간 (밀리초) — 15분 */
     private val REST_STOP_DURATION_MS = 15 * 60 * 1000L
+
+    /** 개발자 모드 데모 휴식 시간 (밀리초) — 10초 */
+    private val REST_STOP_DEMO_DURATION_MS = 10 * 1000L
     // ─────────────────────────────────────────────────────────────────────────
 
     private val isNightMode: Boolean
@@ -515,18 +519,31 @@ class MainActivity : BaseActivity(),
         if (isRestStopActive) return
         isRestStopActive = true
 
+        // 개발자 모드 여부 확인 — 데모 시 10초, 실제 15분
+        val isDemoMode = DeveloperModeManager.isEnabled(this)
+        val durationMs = if (isDemoMode) REST_STOP_DEMO_DURATION_MS else REST_STOP_DURATION_MS
+        val warnThresholdSec = if (isDemoMode) 5L else 60L  // 경고 색상 전환 기준
+
         // 진행 중이던 배송 완료 버튼 숨기기
         binding.btnCompleteTrip.visibility = View.GONE
 
-        // 네비 뷰를 어둡게 dim — 블러 대신 alpha 처리
-        binding.naviContainer.animate()
-            .alpha(0.12f)
-            .setDuration(450)
-            .start()
-
         // 오버레이 내용 설정
         binding.tvRestStopName.text = if (stopName.isNotBlank()) stopName else "휴게소"
-        binding.tvRestTimer.text = "15:00"
+        binding.tvRestTimer.text = if (isDemoMode) "00:10" else "15:00"
+        binding.tvRestTimer.setTextColor(Color.parseColor("#4CAF50"))  // 색상 초기화
+
+        // 개발자 모드 데모: 라벨에 "[데모]" 표시 + 건너뛰기 버튼 노출
+        if (isDemoMode) {
+            binding.tvRestTimerLabel.text = "남은 휴식 시간 [개발자 데모 — 10초]"
+            binding.btnRestStopSkip.visibility = View.VISIBLE
+            binding.btnRestStopSkip.setOnClickListener {
+                restStopCountDown?.cancel()
+                hideRestStopOverlay()
+            }
+        } else {
+            binding.tvRestTimerLabel.text = "남은 휴식 시간"
+            binding.btnRestStopSkip.visibility = View.GONE
+        }
 
         // 오버레이 페이드 인
         binding.restStopOverlay.alpha = 0f
@@ -552,17 +569,17 @@ class MainActivity : BaseActivity(),
             }
         } catch (_: Exception) { }
 
-        // 15분 카운트다운 시작
+        // 카운트다운 시작 (개발자 모드: 10초 / 실제: 15분)
         restStopCountDown?.cancel()
-        restStopCountDown = object : CountDownTimer(REST_STOP_DURATION_MS, 1000) {
+        restStopCountDown = object : CountDownTimer(durationMs, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 val totalSec = millisUntilFinished / 1000
                 val mins = totalSec / 60
                 val secs = totalSec % 60
                 binding.tvRestTimer.text = String.format(Locale.US, "%02d:%02d", mins, secs)
 
-                // 남은 시간 1분 이하면 타이머 색상을 주황으로 변경
-                if (totalSec <= 60) {
+                // 남은 시간이 경고 임계값 이하면 타이머 색상을 주황으로 변경
+                if (totalSec <= warnThresholdSec) {
                     binding.tvRestTimer.setTextColor(Color.parseColor("#FF9800"))
                 }
             }
@@ -573,7 +590,17 @@ class MainActivity : BaseActivity(),
             }
         }.start()
 
-        Log.d("RestStop", "✅ 휴게소 진입: $stopName — 15분 타이머 시작")
+        val logLabel = if (isDemoMode) "10초 데모 타이머" else "15분 타이머"
+        Log.d("RestStop", "✅ 휴게소 진입: $stopName — $logLabel 시작 (개발자 모드: $isDemoMode)")
+    }
+
+    /**
+     * BaseActivity.DevRestModeCallback 구현.
+     * 개발자 메뉴의 "😴 휴식 모드" 버튼이 눌렸을 때 호출된다.
+     * 개발자 모드에서는 타이머가 10초로 표시된다.
+     */
+    override fun triggerRestModeDemo() {
+        showRestStopOverlay("데모 휴게소")
     }
 
     /**
@@ -587,12 +614,6 @@ class MainActivity : BaseActivity(),
 
         // 타이머 색상 초기화 (다음 진입을 위해)
         binding.tvRestTimer.setTextColor(Color.parseColor("#4CAF50"))
-
-        // 네비 뷰 alpha 복구
-        binding.naviContainer.animate()
-            .alpha(1f)
-            .setDuration(600)
-            .start()
 
         // 오버레이 페이드 아웃
         binding.restStopOverlay.animate()

@@ -36,7 +36,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginBottom="92dp"
-        android:background="#CC000000"
+        android:background="#FF000000"
         android:visibility="gone">
 
         <!-- 중앙 카드 -->
@@ -95,6 +95,7 @@
 
             <!-- 남은 시간 라벨 -->
             <TextView
+                android:id="@+id/tvRestTimerLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
@@ -102,6 +103,20 @@
                 android:text="남은 휴식 시간"
                 android:textColor="#888888"
                 android:textSize="13sp" />
+
+            <!-- 개발자 모드 데모 전용: 건너뛰기 버튼 (기본 GONE, 개발자 모드시 VISIBLE) -->
+            <Button
+                android:id="@+id/btnRestStopSkip"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginTop="20dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:text="건너뛰기 (데모)"
+                android:textSize="12sp"
+                android:textColor="#999999"
+                android:backgroundTint="#2A2A2A"
+                android:visibility="gone" />
 
         </LinearLayout>
     </FrameLayout>

@@ -40,6 +40,17 @@ import java.net.URL
  */
 abstract class BaseActivity : AppCompatActivity() {
 
+    // ─── 개발자 모드 휴식 데모 콜백 인터페이스 ────────────────────────────────
+    /**
+     * 개발자 메뉴의 "😴 휴식 모드" 버튼이 눌렸을 때 실제 오버레이를 표시할 수 있는
+     * Activity가 구현해야 하는 인터페이스.
+     * 현재는 MainActivity만 구현한다.
+     */
+    interface DevRestModeCallback {
+        fun triggerRestModeDemo()
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     private var devFab: ImageButton? = null
     private var devMenuContainer: LinearLayout? = null
     private var menuVisible = false
@@ -72,6 +83,9 @@ abstract class BaseActivity : AppCompatActivity() {
             globalChatReceiver,
             IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE)
         )
+
+        // 개발자 모드 FAB 동기화 (다른 화면에서 활성화 후 돌아온 경우)
+        syncDevFab()
     }
 
     override fun onPause() {
@@ -386,15 +400,41 @@ abstract class BaseActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 개발자 메뉴 — 😴 휴식 모드 데모
+     *
+     * MainActivity가 DevRestModeCallback 을 구현하고 있으면 오버레이를 직접 표시하고,
+     * 다른 화면에서 눌렀다면 메인 화면으로 이동하라는 안내를 보여준다.
+     *
+     * 개발자 모드에서는 타이머가 15분 대신 10초로 표시되어 빠른 데모가 가능하다.
+     */
     private fun onDevMenu_RestMode() {
-        AlertDialog.Builder(this)
-            .setTitle("😴 휴식 모드 (테스트)")
-            .setMessage("휴식 모드를 활성화합니다.\n\n실제 GPS 전송이 중지되고 '휴식 중' 상태로 표시됩니다.\n\n(현재 테스트 구현 — 실제 기능은 추후 연동)")
-            .setPositiveButton("활성화") { _, _ ->
-                Toast.makeText(this, "😴 휴식 모드가 활성화되었습니다. (테스트)", Toast.LENGTH_LONG).show()
-            }
-            .setNegativeButton("취소", null)
-            .show()
+        if (this is DevRestModeCallback) {
+            // 현재 Activity(MainActivity)에서 직접 오버레이 트리거
+            AlertDialog.Builder(this)
+                .setTitle("😴 휴식 모드 데모")
+                .setMessage(
+                    "휴게소 도착 화면을 데모합니다.\n\n" +
+                    "⏱ 타이머: 10초 (실제: 15분)\n" +
+                    "🔘 '건너뛰기' 버튼으로 즉시 종료 가능\n\n" +
+                    "지금 실행하시겠습니까?"
+                )
+                .setPositiveButton("▶ 실행") { _, _ ->
+                    (this as DevRestModeCallback).triggerRestModeDemo()
+                }
+                .setNegativeButton("취소", null)
+                .show()
+        } else {
+            // 다른 화면(설정, 채팅 등)에서 눌렀을 때 안내
+            AlertDialog.Builder(this)
+                .setTitle("😴 휴식 모드 데모")
+                .setMessage(
+                    "휴식 모드 데모는 메인 네비게이션 화면에서만 실행할 수 있습니다.\n\n" +
+                    "메인 화면으로 이동 후 개발자 FAB(🔧)을 다시 눌러주세요."
+                )
+                .setPositiveButton("확인", null)
+                .show()
+        }
     }
 
     private fun onDevMenu_Disable() {
