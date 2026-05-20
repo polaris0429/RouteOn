@@ -40,14 +40,21 @@ import java.net.URL
  */
 abstract class BaseActivity : AppCompatActivity() {
 
-    // ─── 개발자 모드 휴식 데모 콜백 인터페이스 ────────────────────────────────
+    // ─── 개발자 모드 콜백 인터페이스 ─────────────────────────────────────────
     /**
-     * 개발자 메뉴의 "😴 휴식 모드" 버튼이 눌렸을 때 실제 오버레이를 표시할 수 있는
-     * Activity가 구현해야 하는 인터페이스.
+     * 개발자 메뉴의 "😴 휴식 모드" 버튼이 눌렸을 때 오버레이를 표시하는 인터페이스.
      * 현재는 MainActivity만 구현한다.
      */
     interface DevRestModeCallback {
         fun triggerRestModeDemo()
+    }
+
+    /**
+     * 개발자 메뉴의 "🗺️ 데모" 에서 시나리오가 선택됐을 때 호출되는 인터페이스.
+     * MainActivity가 구현해 실제 네비 시작 + 시뮬레이터 재생을 처리한다.
+     */
+    interface DemoCallback {
+        fun onDemoScenarioSelected(scenario: DemoScenarioPlayer.DemoScenario)
     }
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -284,7 +291,114 @@ abstract class BaseActivity : AppCompatActivity() {
     // =========================================================================
 
     private fun onDevMenu_Demo() {
-        Toast.makeText(this, "🗺️ 데모 모드는 추후 GPS 스푸핑으로 구현 예정입니다.", Toast.LENGTH_LONG).show()
+        if (this !is DemoCallback) {
+            AlertDialog.Builder(this)
+                .setTitle("🗺️ 데모 시나리오")
+                .setMessage("데모 시나리오는 메인 네비게이션 화면에서만 실행할 수 있습니다.\n\n메인 화면으로 이동 후 🔧 버튼을 다시 눌러주세요.")
+                .setPositiveButton("확인", null).show()
+            return
+        }
+        showDemoScenarioPicker()
+    }
+
+    /**
+     * 내장 시나리오 3 개 + 저장된 GPX 파일 목록을 다이얼로그로 표시한다.
+     * 사용자가 항목을 선택하면 [DemoCallback.onDemoScenarioSelected] 를 호출한다.
+     */
+    private fun showDemoScenarioPicker() {
+        val builtin  = DemoScenarioPlayer.builtinScenarios()
+        val recorder = GpxRecorder(this)
+        val gpxFiles = recorder.listSavedFiles()
+
+        // 항목 라벨 구성 (내장 + 파일)
+        val labels = mutableListOf<String>()
+        builtin.forEach { labels.add(it.name) }
+        gpxFiles.forEach { labels.add("📂 ${it.nameWithoutExtension}") }
+
+        if (labels.isEmpty()) {
+            Toast.makeText(this, "시나리오가 없습니다. 내장 시나리오 오류를 확인하세요.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // 속도 배율 라디오 (1x / 3x / 5x)
+        val density = resources.displayMetrics.density
+        val layout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding((20*density).toInt(), (8*density).toInt(), (20*density).toInt(), 0)
+        }
+        val speedLabel = android.widget.TextView(this).apply {
+            text = "⚡ 재생 속도"
+            textSize = 12f
+            setTextColor(android.graphics.Color.GRAY)
+        }
+        val speedRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+        }
+        var speedMultiplier = 3
+        val speeds = listOf(1 to "1x", 3 to "3x", 5 to "5x")
+        val radioGroup = android.widget.RadioGroup(this).apply { orientation = android.widget.RadioGroup.HORIZONTAL }
+        speeds.forEach { (v, label) ->
+            val rb = android.widget.RadioButton(this).apply {
+                text = label; tag = v
+                isChecked = (v == speedMultiplier)
+            }
+            rb.setOnCheckedChangeListener { _, checked -> if (checked) speedMultiplier = v }
+            radioGroup.addView(rb)
+        }
+        layout.addView(speedLabel)
+        layout.addView(radioGroup)
+        layout.addView(android.view.View(this).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, (8*density).toInt()
+            )
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle("🗺️ 데모 시나리오 선택")
+            .setView(layout)
+            .setItems(labels.toTypedArray()) { _, idx ->
+                val scenario: DemoScenarioPlayer.DemoScenario
+                if (idx < builtin.size) {
+                    scenario = builtin[idx].copy()
+                } else {
+                    val file = gpxFiles[idx - builtin.size]
+                    val pts  = recorder.parseGpxFile(file)
+                    if (pts.size < 2) {
+                        Toast.makeText(this, "GPX 파일을 읽을 수 없습니다.", Toast.LENGTH_SHORT).show()
+                        return@setItems
+                    }
+                    // GPX 파일에서 wpt 타입 정보를 가져와 stops 구성
+                    val stops = pts
+                        .filter { it.name.isNotEmpty() || it.type.isNotEmpty() }
+                        .map { DemoScenarioPlayer.ScenarioStop(it.name, it.lat, it.lon, it.type.ifEmpty { "unloading" }) }
+                    scenario = DemoScenarioPlayer.DemoScenario(
+                        id = "gpx_${file.nameWithoutExtension}",
+                        name = "📂 ${file.nameWithoutExtension}",
+                        description = "저장된 GPX 경로 (${pts.size}포인트)",
+                        stops = stops,
+                        trackPoints = pts,
+                        isFromFile = true,
+                        sourceFile = file
+                    )
+                }
+                // 속도 적용 후 MainActivity 에 전달
+                AlertDialog.Builder(this)
+                    .setTitle(scenario.name)
+                    .setMessage("${scenario.description}\n\n속도: ${speedMultiplier}x 로 재생합니다.\n\n⚠ 기기 개발자 옵션에서\n'모의 위치 허용 앱 → RouteOn' 을 설정해야 합니다.")
+                    .setPositiveButton("▶ 시작") { _, _ ->
+                        (this as DemoCallback).onDemoScenarioSelected(
+                            scenario.copy().also {
+                                // speedMultiplier 는 DemoScenarioPlayer 인스턴스에 설정
+                            }
+                        )
+                        // 속도 값을 Intent extra 처럼 전달하기 위해 SharedPreferences 사용
+                        getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                            .edit().putInt("demo_speed_multiplier", speedMultiplier).apply()
+                    }
+                    .setNegativeButton("취소", null).show()
+            }
+            .setNegativeButton("취소", null)
+            .show()
     }
 
     private fun onDevMenu_CreateTrip() {

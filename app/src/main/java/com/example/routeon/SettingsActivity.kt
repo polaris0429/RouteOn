@@ -298,7 +298,10 @@ class SettingsActivity : BaseActivity() {
             .setTitle(getString(R.string.settings_logout_title))
             .setMessage(getString(R.string.settings_logout_message))
             .setPositiveButton(getString(R.string.settings_logout_confirm)) { _, _ ->
+                // ★ Fix: 로그아웃 시 RouteOnPrefs + ChatPrefs 모두 초기화
                 getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).edit { clear() }
+                getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE).edit { clear() }
+                ChatWebSocketService.stop(this)
                 val intent = Intent(this, LoginActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 startActivity(intent)

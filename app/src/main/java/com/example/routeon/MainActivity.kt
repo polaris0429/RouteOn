@@ -99,7 +99,8 @@ class MainActivity : BaseActivity(),
     KNGuidance_RouteGuideDelegate, KNGuidance_SafetyGuideDelegate,
     KNGuidance_VoiceGuideDelegate, KNGuidance_CitsGuideDelegate,
     SensorEventListener,
-    BaseActivity.DevRestModeCallback {
+    BaseActivity.DevRestModeCallback,
+    BaseActivity.DemoCallback {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var naviView: KNNaviView
@@ -185,6 +186,10 @@ class MainActivity : BaseActivity(),
     private val tripDestText    = mutableMapOf<String, String>()
     private val tripOriginCoords = mutableMapOf<String, DoubleArray>()
     private val tripDestCoords   = mutableMapOf<String, DoubleArray>()
+
+    // ─── 개발자 모드: GPX 기록 + 데모 시뮬레이터 ──────────────────────────────
+    private val gpxRecorder  by lazy { GpxRecorder(this) }
+    private val demoPlayer   by lazy { DemoScenarioPlayer(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -345,6 +350,8 @@ class MainActivity : BaseActivity(),
         sensorManager.unregisterListener(this)
         permissionDialog?.dismiss(); permissionDialog = null
         restStopCountDown?.cancel(); restStopCountDown = null
+        demoPlayer.stop()  // 데모 재생 중이면 mock GPS 정리
+        if (gpxRecorder.isRecording) gpxRecorder.stopAndSave()  // 미저장 트랙 저장
         if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized)
             fusedLocationClient.removeLocationUpdates(locationCallback)
     }
@@ -1048,6 +1055,22 @@ class MainActivity : BaseActivity(),
             ?: jsonResponse.optJSONObject("optimized_route")?.optJSONArray("route")
             ?: jsonResponse.optJSONArray("waypoints")
         if (arr != null && arr.length() > 0) {
+            // ── 개발자 모드: /optimize 응답 라우트를 GPX 파일로 저장 ──────────────────
+            if (DeveloperModeManager.isEnabled(this)) {
+                val tripId = currentNaviTripId ?: "unknown"
+                val saved = gpxRecorder.saveFromRoute(tripId, arr)
+                // 동시에 실트랙 기록도 시작
+                gpxRecorder.startRecording(tripId)
+                withContext(Dispatchers.Main) {
+                    if (saved != null)
+                        Toast.makeText(
+                            this@MainActivity,
+                            "📎 GPX 저장: ${saved.name}\n(터치 실주행 트랙도 기록 중)",
+                            Toast.LENGTH_LONG
+                        ).show()
+                }
+            }
+            // ── 기존 라우트 파싱 로직 ──────────────────────────────────────────
             val vias = mutableListOf<KNPOI>()
             var fName = fallbackDestName; var fLat = fallbackLat; var fLng = fallbackLng
             currentStops.clear()
@@ -1209,6 +1232,16 @@ class MainActivity : BaseActivity(),
 
     override fun guidanceGuideEnded(aGuidance: KNGuidance) {
         if (::naviView.isInitialized) naviView.guidanceGuideEnded(aGuidance)
+        // GPX 트랙 저장 (개발자 모드)
+        if (DeveloperModeManager.isEnabled(this) && gpxRecorder.isRecording) {
+            val saved = gpxRecorder.stopAndSave()
+            runOnUiThread {
+                if (saved != null)
+                    Toast.makeText(this, "💾 GPX 트랙 저장: ${saved.name}", Toast.LENGTH_LONG).show()
+            }
+        }
+        // 데모 재생 중이면 정리
+        if (demoPlayer.isPlaying) demoPlayer.stop()
         runOnUiThread {
             Toast.makeText(this@MainActivity, getString(R.string.navi_ended), Toast.LENGTH_SHORT).show()
             binding.naviContainer.removeAllViews(); naviView = KNNaviView(this@MainActivity); binding.naviContainer.addView(naviView)
@@ -1224,7 +1257,14 @@ class MainActivity : BaseActivity(),
     override fun guidanceRouteChanged(aGuidance: KNGuidance, f: KNRoute, fl: KNLocation, t: KNRoute, tl: KNLocation, r: KNGuideRouteChangeReason) {}
     override fun guidanceDidUpdateRoutes(aGuidance: KNGuidance, aRoutes: List<KNRoute>, aMultiRouteInfo: KNMultiRouteInfo?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRoutes(aGuidance, aRoutes, aMultiRouteInfo) }
     override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {}
-    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) { if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide) }
+    override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) {
+        if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide)
+        // 개발자 모드: 실주행 GPS 트랙 기록
+        if (DeveloperModeManager.isEnabled(this) && gpxRecorder.isRecording
+            && lastLat != 0.0 && lastLng != 0.0) {
+            gpxRecorder.addTrackPoint(lastLat, lastLng)
+        }
+    }
     override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide) }
     override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide) }
     override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<KNSafety>?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties) }
@@ -1309,4 +1349,104 @@ class MainActivity : BaseActivity(),
     }
 
     override fun didUpdateCitsGuide(aGuidance: KNGuidance, aCitsGuide: KNGuide_Cits) { if (::naviView.isInitialized) naviView.didUpdateCitsGuide(aGuidance, aCitsGuide) }
+
+    // =========================================================================
+    // DemoCallback 구현 — 데모 시나리오 시작
+    // =========================================================================
+
+    /**
+     * BaseActivity 의 데모 다이얼로그에서 시나리오가 선택됐을 때 호출된다.
+     *
+     * 1. scenario.stops → currentStops 에 주입 (하차지도착 / 휴게소 입장 오버레이 치리용)
+     * 2. KNSDK 네비게이션을 시나리오 시스트/도착지로 시작 (NaviView 에 경로 표시)
+     * 3. DemoScenarioPlayer 가 Mock GPS 를 주입해 실제 지도마커 이동
+     */
+    override fun onDemoScenarioSelected(scenario: DemoScenarioPlayer.DemoScenario) {
+        if (scenario.trackPoints.size < 2) {
+            Toast.makeText(this, "시나리오 데이터가 부족합니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // ─ 1. 데모 트립 ID + currentStops 설정
+        val demoTripId = "demo_${scenario.id}"
+        currentNaviTripId = demoTripId
+        currentStops.clear()
+        visitedRestStopKeys.clear()
+        scenario.stops.forEach { stop ->
+            currentStops.add(RouteStop(
+                id    = "",
+                name  = stop.name,
+                lat   = stop.lat,
+                lng   = stop.lon,
+                type  = stop.type
+            ))
+        }
+
+        // ─ 2. BottomSheet 닫기 + Toast
+        bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+        Toast.makeText(this, "🗺️ ${scenario.name} 데모 시작!", Toast.LENGTH_SHORT).show()
+
+        // ─ 3. 시나리오 첫 번째 / 마지막 정보
+        val originPt = scenario.trackPoints.first()
+        val destStop = scenario.stops.lastOrNull()
+        val destLat  = destStop?.lat ?: scenario.trackPoints.last().lat
+        val destLon  = destStop?.lon ?: scenario.trackPoints.last().lon
+        val destName = destStop?.name ?: scenario.name
+
+        // ─ 4. 속도 배율 읽기
+        val speed = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+            .getInt("demo_speed_multiplier", 3)
+        demoPlayer.speedMultiplier = speed
+
+        // ─ 5. KNSDK 네비 시작 (실제 경로 라우팅 → NaviView 에 경로 표시됨)
+        CoroutineScope(Dispatchers.IO).launch {
+            val originKatec = convertWGS84ToKATEC(originPt.lat, originPt.lon)
+            val destKatec   = convertWGS84ToKATEC(destLat, destLon)
+            if (originKatec == null || destKatec == null) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "좌표 변환 실패 — 지도만 시뮬레이션됨", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                val sp = KNPOI("출발지", originKatec.first, originKatec.second, "")
+                val gp = KNPOI(destName, destKatec.first, destKatec.second, "")
+                // 중간 stops (rest_stop 제외) 를 via 로
+                val vias = mutableListOf<KNPOI>()
+                scenario.stops.dropLast(1).forEach { stop ->
+                    if (stop.type != "destination") {
+                        convertWGS84ToKATEC(stop.lat, stop.lon)?.let {
+                            vias.add(KNPOI(stop.name, it.first, it.second, ""))
+                        }
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    startNavigationWithWaypoints(sp, gp, vias)
+                }
+            }
+
+            // ─ 6. Mock GPS 시뮬레이션 시작 (네비 시작 후 1초 딥 대기)
+            withContext(Dispatchers.Main) {
+                android.os.Handler(Looper.getMainLooper()).postDelayed({
+                    demoPlayer.play(
+                        scenario = scenario,
+                        onLocation = { lat, lon, speedKmh ->
+                            // 서버에 GPS 전송 (관리자 대시보드에 표시됨)
+                            sendLocationToServer(lat, lon, speedKmh / 3.6f)
+                            // 하차지 근접 체크 → 오버레이 버튼 표시
+                            checkProximityToStops(lat, lon)
+                            lastLat = lat; lastLng = lon
+                        },
+                        onFinished = {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "✅ 데모 시나리오 완료!",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            currentNaviTripId = null
+                            currentStops.clear()
+                        }
+                    )
+                }, 1_000L)
+            }
+        }
+    }
 }

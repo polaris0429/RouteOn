@@ -62,7 +62,13 @@
         <activity android:name=".VehicleSettingsActivity"         android:exported="false"/>
         <activity android:name=".LanguageSettingsActivity"        android:exported="false"/>
         <activity android:name=".HelpActivity"                    android:exported="false"/>
-        <activity android:name=".ChatActivity"                    android:exported="false"/>
+
+        <!-- ★ Fix: adjustResize — 키보드 올라올 때 입력창이 가려지는 문제 수정 -->
+        <activity
+            android:name=".ChatActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"/>
+
         <activity android:name=".TripHistoryActivity"             android:exported="false"/>
 
 
