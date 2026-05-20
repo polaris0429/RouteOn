@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -50,15 +51,12 @@ class ChatActivity : BaseActivity() {
             val msgId = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_ID) ?: ""
             val createdAt = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CREATED_AT) ?: ""
 
-            // 💡 핵심 1: 백엔드가 텍스트를 웹소켓으로 같이 줬다면 바로 화면에 표시
             if (content.isNotEmpty()) {
                 if (messages.none { it.id == msgId && msgId.isNotEmpty() }) {
                     addReceivedMessageUI(content, msgId, isoToHHmm(createdAt))
                     conversationId?.let { markRead(it, msgId) }
                 }
-            }
-            // 💡 핵심 2: 백엔드가 텍스트 없이 "채팅 왔어!" 라는 이벤트(신호)만 줬을 경우 REST API로 즉시 최신 1개를 가져옴
-            else {
+            } else {
                 conversationId?.let { fetchLatestMessageSilent(it) }
             }
         }
@@ -70,10 +68,109 @@ class ChatActivity : BaseActivity() {
         setupUI()
         ChatWebSocketService.start(this)
 
-        val cachedId = getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE).getString("chat_conversation_id", null)
+        // ── 1. 캐시된 conversation_id 확인
+        val cachedId = getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE)
+            .getString("chat_conversation_id", null)
+
         if (cachedId != null) {
             conversationId = cachedId
             fetchMessageHistory(cachedId)
+        } else {
+            // ── 2. 없으면 파트너 조회 → 대화방 생성/조회
+            initConversation()
+        }
+    }
+
+    // ── 채팅 파트너(관리자) 조회 후 대화방 생성 ─────────────────────────────
+    private fun initConversation() {
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+            .getString("access_token", null) ?: run {
+            Toast.makeText(this, "로그인 정보가 없습니다.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // STEP 1: 채팅 가능한 파트너(관리자) 목록 조회
+                val partnersConn = (URL("${Constants.BASE_URL}/chat/partners").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    setRequestProperty("Authorization", "Bearer $token")
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                }
+
+                if (partnersConn.responseCode != 200) {
+                    Log.e("ChatActivity", "❌ /chat/partners 실패: ${partnersConn.responseCode}")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@ChatActivity, "관리자 정보를 불러올 수 없습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val partnersArr = JSONArray(partnersConn.inputStream.bufferedReader().readText())
+                if (partnersArr.length() == 0) {
+                    Log.w("ChatActivity", "⚠️ 채팅 가능한 파트너 없음")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@ChatActivity, "채팅 가능한 관리자가 없습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                // 첫 번째 파트너(관리자) 사용
+                val partnerId = partnersArr.getJSONObject(0).optString("id", "")
+                if (partnerId.isEmpty()) {
+                    Log.e("ChatActivity", "❌ 파트너 ID 없음")
+                    return@launch
+                }
+                Log.d("ChatActivity", "✅ 파트너 ID: $partnerId")
+
+                // STEP 2: 대화방 생성 또는 기존 대화방 조회
+                val convConn = (URL("${Constants.BASE_URL}/chat/conversations").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("Content-Type", "application/json")
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                }
+                OutputStreamWriter(convConn.outputStream).use {
+                    it.write(JSONObject().apply { put("partner_id", partnerId) }.toString())
+                }
+
+                val convCode = convConn.responseCode
+                if (convCode !in 200..201) {
+                    Log.e("ChatActivity", "❌ /chat/conversations 실패: $convCode")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@ChatActivity, "대화방을 열 수 없습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val convJson = JSONObject(convConn.inputStream.bufferedReader().readText())
+                val convId = convJson.optString("id", "")
+                if (convId.isEmpty()) {
+                    Log.e("ChatActivity", "❌ conversation_id 없음")
+                    return@launch
+                }
+
+                Log.d("ChatActivity", "✅ conversation_id: $convId")
+
+                // STEP 3: 저장 및 히스토리 로드
+                getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE).edit()
+                    .putString("chat_conversation_id", convId)
+                    .apply()
+
+                withContext(Dispatchers.Main) {
+                    conversationId = convId
+                    fetchMessageHistory(convId)
+                }
+
+            } catch (e: Exception) {
+                Log.e("ChatActivity", "💥 initConversation 오류: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@ChatActivity, "채팅 초기화 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -101,9 +198,8 @@ class ChatActivity : BaseActivity() {
         }
     }
 
-    // 서버가 빈 껍데기만 보냈을 때 조용히 최신 메시지 1개만 가져와서 채워넣는 이중 방어 로직
     private fun fetchLatestMessageSilent(convId: String) {
-        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).all["access_token"]?.toString() ?: return
+        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$convId/messages?limit=1").openConnection() as HttpURLConnection).apply {
@@ -117,9 +213,7 @@ class ChatActivity : BaseActivity() {
                         val content = obj.optString("content", "")
                         val senderId = obj.optString("sender_id", "")
                         val createdAt = obj.optString("created_at", "")
-
-                        val myId = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).all["user_id"]?.toString() ?: ""
-
+                        val myId = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("user_id", "") ?: ""
                         withContext(Dispatchers.Main) {
                             if (messages.none { it.id == id && id.isNotEmpty() }) {
                                 if (senderId != myId) {
@@ -135,7 +229,7 @@ class ChatActivity : BaseActivity() {
     }
 
     private fun fetchMessageHistory(convId: String) {
-        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).all["access_token"]?.toString() ?: return
+        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$convId/messages?limit=50").openConnection() as HttpURLConnection).apply {
@@ -143,13 +237,21 @@ class ChatActivity : BaseActivity() {
                 }
                 if (conn.responseCode == 200) {
                     val arr = JSONArray(conn.inputStream.bufferedReader().readText())
+                    val myId = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("user_id", "") ?: ""
                     val history = mutableListOf<ChatMessage>()
                     for (i in 0 until arr.length()) {
                         val obj = arr.getJSONObject(i)
-                        history.add(ChatMessage(obj.getString("id"), obj.getString("content"), obj.getString("sender_id") == getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).all["user_id"]?.toString(), isoToHHmm(obj.getString("created_at")), 0L))
+                        history.add(ChatMessage(
+                            obj.getString("id"),
+                            obj.getString("content"),
+                            obj.getString("sender_id") == myId,
+                            isoToHHmm(obj.getString("created_at")),
+                            0L
+                        ))
                     }
                     withContext(Dispatchers.Main) {
-                        messages.clear(); messages.addAll(history)
+                        messages.clear()
+                        messages.addAll(history)
                         adapter.notifyDataSetChanged()
                         recycler.scrollToPosition(messages.size - 1)
                     }
@@ -159,8 +261,13 @@ class ChatActivity : BaseActivity() {
     }
 
     private fun sendMessage(text: String) {
-        val cid = conversationId ?: return
-        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).all["access_token"]?.toString() ?: return
+        val cid = conversationId ?: run {
+            // conversationId가 아직 없으면 대화방 초기화 먼저 시도
+            Toast.makeText(this, "대화방 연결 중입니다. 잠시 후 다시 시도해주세요.", Toast.LENGTH_SHORT).show()
+            initConversation()
+            return
+        }
+        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
 
         val temp = ChatMessage("", text, true, SimpleDateFormat("HH:mm", Locale.KOREA).format(Date()), System.currentTimeMillis())
         messages.add(temp)
@@ -170,26 +277,35 @@ class ChatActivity : BaseActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$cid/messages").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; doOutput = true
+                    requestMethod = "POST"
+                    doOutput = true
                     setRequestProperty("Authorization", "Bearer $t")
                     setRequestProperty("Content-Type", "application/json")
                 }
-                OutputStreamWriter(conn.outputStream).use { it.write(JSONObject().apply { put("content", text) }.toString()) }
-                conn.responseCode
-            } catch (e: Exception) { }
+                OutputStreamWriter(conn.outputStream).use {
+                    it.write(JSONObject().apply { put("content", text) }.toString())
+                }
+                val code = conn.responseCode
+                Log.d("ChatActivity", "📤 메시지 전송: HTTP $code")
+            } catch (e: Exception) {
+                Log.e("ChatActivity", "❌ 메시지 전송 오류: ${e.message}")
+            }
         }
     }
 
     private fun markRead(cid: String, mid: String) {
-        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).all["access_token"]?.toString() ?: return
+        val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$cid/read").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; doOutput = true
+                    requestMethod = "POST"
+                    doOutput = true
                     setRequestProperty("Authorization", "Bearer $t")
                     setRequestProperty("Content-Type", "application/json")
                 }
-                OutputStreamWriter(conn.outputStream).use { it.write(JSONObject().apply { put("last_read_message_id", mid) }.toString()) }
+                OutputStreamWriter(conn.outputStream).use {
+                    it.write(JSONObject().apply { put("last_read_message_id", mid) }.toString())
+                }
                 conn.responseCode
             } catch (e: Exception) { }
         }
@@ -205,7 +321,9 @@ class ChatActivity : BaseActivity() {
     override fun onResume() {
         super.onResume()
         ChatWebSocketService.isChatActivityVisible = true
-        LocalBroadcastManager.getInstance(this).registerReceiver(chatReceiver, IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE))
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            chatReceiver, IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE)
+        )
     }
 
     override fun onPause() {
@@ -223,7 +341,8 @@ class ChatActivity : BaseActivity() {
             val tmSent: TextView = v.findViewById(R.id.tvTimeSent)
             val tmRecv: TextView = v.findViewById(R.id.tvTimeReceived)
         }
-        override fun onCreateViewHolder(p: ViewGroup, vt: Int) = VH(LayoutInflater.from(p.context).inflate(R.layout.item_chat_message, p, false))
+        override fun onCreateViewHolder(p: ViewGroup, vt: Int) =
+            VH(LayoutInflater.from(p.context).inflate(R.layout.item_chat_message, p, false))
         override fun getItemCount() = list.size
         override fun onBindViewHolder(h: VH, p: Int) {
             val m = list[p]

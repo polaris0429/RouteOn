@@ -60,6 +60,7 @@ class RegisterActivity : AppCompatActivity() {
     private var companyName = ""
     private var username = ""
     private var password = ""
+    private var name = ""
     private var isUsernameChecked = false
 
     private lateinit var cbAgreeAll: CheckBox
@@ -257,7 +258,7 @@ class RegisterActivity : AppCompatActivity() {
         // 🚀 STEP 2 -> STEP TERMS
         // ==========================================
         btnNextStep2.setOnClickListener {
-            val name = etName.text.toString().trim()
+            name = etName.text.toString().trim()
             username = etUsername.text.toString().trim()
             password = etPassword.text.toString().trim()
             val passwordConfirm = etPasswordConfirm.text.toString().trim()
@@ -528,7 +529,7 @@ class RegisterActivity : AppCompatActivity() {
 
             if (inputCode == generatedCode && inputCode.length == 6) {
                 btnVerifySms.isEnabled = false
-                registerUserOnServer(username, password, phone, orgCode)
+                registerUserOnServer(username, password, phone, orgCode, name)
             } else {
                 Toast.makeText(this, "인증번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
             }
@@ -542,7 +543,7 @@ class RegisterActivity : AppCompatActivity() {
         }
     }
 
-    private fun registerUserOnServer(usernameStr: String, passwordStr: String, phoneStr: String, orgCodeStr: String) {
+    private fun registerUserOnServer(usernameStr: String, passwordStr: String, phoneStr: String, orgCodeStr: String, nameStr: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val url = URL("${Constants.BASE_URL}/auth/register")
@@ -557,6 +558,7 @@ class RegisterActivity : AppCompatActivity() {
                     put("phone", phoneStr)
                     put("org_code", orgCodeStr)
                     put("role", "driver")
+                    put("name", nameStr)
                 }
 
                 OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
