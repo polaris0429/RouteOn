@@ -36,6 +36,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.test.core.app.ActivityScenario
 import com.example.routeon.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -350,8 +351,7 @@ class MainActivity : BaseActivity(),
         sensorManager.unregisterListener(this)
         permissionDialog?.dismiss(); permissionDialog = null
         restStopCountDown?.cancel(); restStopCountDown = null
-        demoPlayer.stop()  // 데모 재생 중이면 mock GPS 정리
-        if (gpxRecorder.isRecording) gpxRecorder.stopAndSave()  // 미저장 트랙 저장
+        demoPlayer.stop()
         if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized)
             fusedLocationClient.removeLocationUpdates(locationCallback)
     }
@@ -962,6 +962,45 @@ class MainActivity : BaseActivity(),
                 card.addView(expandPanel); card.addView(plusRow2)
             }
             card.addView(btnRow)
+
+            // ── 경로 미리보기: 카드 아무 곳 클릭 시 TripPreviewActivity ──────────
+            // 내부 버튼(거절·수락·완료·안내시작 등)은 자체 이벤트를 소모하므로
+            // 카드 배경·텍스트·칩 영역을 탭했을 때만 미리보기가 열린다.
+            run {
+                val previewDistKm = optimizedRoute?.optDouble("total_distance_km",    0.0) ?: 0.0
+                val previewDurMin = optimizedRoute?.optDouble("estimated_duration_min", 0.0) ?: 0.0
+
+                // 첫 상차지 이름, 마지막 하차지(또는 마지막 경유지) 이름
+                val wpList = if (waypointsArr != null)
+                    (0 until waypointsArr.length()).map { waypointsArr.getJSONObject(it) }
+                else emptyList()
+                val firstLoading  = wpList.firstOrNull { it.optString("type", "unloading") == "loading" }
+                val lastUnloading = wpList.lastOrNull  { it.optString("type", "unloading") == "unloading" }
+                    ?: wpList.lastOrNull()
+
+                val pickupAddr = firstLoading?.optString("name", "")  ?: ""
+                val destAddr   = rawDestName.takeIf { it.isNotEmpty() }
+                    ?: lastUnloading?.optString("name", "")?.takeIf { it.isNotEmpty() }
+                    ?: displayName
+
+                card.isClickable = true
+                card.isFocusable = true
+                card.setOnClickListener {
+                    startActivity(
+                        Intent(this@MainActivity, TripPreviewActivity::class.java).apply {
+                            putExtra("trip_id",        tripId)
+                            putExtra("trip_name",      displayName)
+                            putExtra("distance_km",    previewDistKm.toFloat())
+                            putExtra("duration_min",   previewDurMin.toFloat())
+                            putExtra("waypoints_json", waypointsArr?.toString() ?: "[]")
+                            putExtra("pickup_name",    pickupAddr)
+                            putExtra("dest_name",      destAddr)
+                            putExtra("status",         status)
+                        }
+                    )
+                }
+            }
+
             container.addView(card)
         }
     }
@@ -1055,19 +1094,41 @@ class MainActivity : BaseActivity(),
             ?: jsonResponse.optJSONObject("optimized_route")?.optJSONArray("route")
             ?: jsonResponse.optJSONArray("waypoints")
         if (arr != null && arr.length() > 0) {
-            // ── 개발자 모드: /optimize 응답 라우트를 GPX 파일로 저장 ──────────────────
-            if (DeveloperModeManager.isEnabled(this)) {
-                val tripId = currentNaviTripId ?: "unknown"
-                val saved = gpxRecorder.saveFromRoute(tripId, arr)
-                // 동시에 실트랙 기록도 시작
-                gpxRecorder.startRecording(tripId)
-                withContext(Dispatchers.Main) {
-                    if (saved != null)
-                        Toast.makeText(
-                            this@MainActivity,
-                            "📎 GPX 저장: ${saved.name}\n(터치 실주행 트랙도 기록 중)",
-                            Toast.LENGTH_LONG
-                        ).show()
+            // ── 개발자 모드: /optimize 응답 라우트 + /polyline 실도로 경로 → GPX 저장 ────────
+            if (DeveloperModeManager.isEnabled(this) && currentNaviTripId != null) {
+                val tripId = currentNaviTripId!!
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                            .getString("access_token", null) ?: return@launch
+                        val polyConn = java.net.URL("${Constants.BASE_URL}/trips/$tripId/polyline")
+                            .openConnection() as java.net.HttpURLConnection
+                        polyConn.requestMethod = "GET"
+                        polyConn.setRequestProperty("Authorization", "Bearer $token")
+                        polyConn.connectTimeout = 8_000; polyConn.readTimeout = 8_000
+
+                        val polyArr = if (polyConn.responseCode == 200) {
+                            val raw = polyConn.inputStream.bufferedReader().readText()
+                            // 포맷 A: [[lat,lon],...] 또는 포맷 B: {"points":[...]}
+                            try { org.json.JSONArray(raw) }
+                            catch (_: Exception) {
+                                org.json.JSONObject(raw).optJSONArray("points") ?: org.json.JSONArray()
+                            }
+                        } else org.json.JSONArray()
+
+                        val saved = gpxRecorder.saveRouteWithPolyline(tripId, arr, polyArr)
+                        withContext(Dispatchers.Main) {
+                            if (saved != null) {
+                                val msg = if (polyArr.length() > 0)
+                                    "📍 GPX 저장 (실도로 ${polyArr.length()}포인트): ${saved.name}"
+                                else
+                                    "📍 GPX 저장 (경유지만): ${saved.name}"
+                                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("MainActivity", "GPX polyline fetch 실패: ${e.message}")
+                    }
                 }
             }
             // ── 기존 라우트 파싱 로직 ──────────────────────────────────────────
@@ -1232,15 +1293,6 @@ class MainActivity : BaseActivity(),
 
     override fun guidanceGuideEnded(aGuidance: KNGuidance) {
         if (::naviView.isInitialized) naviView.guidanceGuideEnded(aGuidance)
-        // GPX 트랙 저장 (개발자 모드)
-        if (DeveloperModeManager.isEnabled(this) && gpxRecorder.isRecording) {
-            val saved = gpxRecorder.stopAndSave()
-            runOnUiThread {
-                if (saved != null)
-                    Toast.makeText(this, "💾 GPX 트랙 저장: ${saved.name}", Toast.LENGTH_LONG).show()
-            }
-        }
-        // 데모 재생 중이면 정리
         if (demoPlayer.isPlaying) demoPlayer.stop()
         runOnUiThread {
             Toast.makeText(this@MainActivity, getString(R.string.navi_ended), Toast.LENGTH_SHORT).show()
@@ -1259,11 +1311,6 @@ class MainActivity : BaseActivity(),
     override fun guidanceDidUpdateIndoorRoute(aGuidance: KNGuidance, aRoute: KNRoute?) {}
     override fun guidanceDidUpdateLocation(aGuidance: KNGuidance, aLocationGuide: KNGuide_Location) {
         if (::naviView.isInitialized) naviView.guidanceDidUpdateLocation(aGuidance, aLocationGuide)
-        // 개발자 모드: 실주행 GPS 트랙 기록
-        if (DeveloperModeManager.isEnabled(this) && gpxRecorder.isRecording
-            && lastLat != 0.0 && lastLng != 0.0) {
-            gpxRecorder.addTrackPoint(lastLat, lastLng)
-        }
     }
     override fun guidanceDidUpdateRouteGuide(aGuidance: KNGuidance, aRouteGuide: KNGuide_Route) { if (::naviView.isInitialized) naviView.guidanceDidUpdateRouteGuide(aGuidance, aRouteGuide) }
     override fun guidanceDidUpdateSafetyGuide(aGuidance: KNGuidance, aSafetyGuide: KNGuide_Safety?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateSafetyGuide(aGuidance, aSafetyGuide) }

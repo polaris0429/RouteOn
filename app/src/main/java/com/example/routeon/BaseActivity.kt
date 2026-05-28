@@ -361,39 +361,39 @@ abstract class BaseActivity : AppCompatActivity() {
                 if (idx < builtin.size) {
                     scenario = builtin[idx].copy()
                 } else {
-                    val file = gpxFiles[idx - builtin.size]
-                    val pts  = recorder.parseGpxFile(file)
-                    if (pts.size < 2) {
+                    val file      = gpxFiles[idx - builtin.size]
+                    // trkpt → 이동 경로 / wpt → 경유지(stops)
+                    val trackPts  = recorder.parseGpxTrack(file)
+                    val stops     = recorder.parseGpxStops(file)
+                    if (trackPts.size < 2) {
                         Toast.makeText(this, "GPX 파일을 읽을 수 없습니다.", Toast.LENGTH_SHORT).show()
                         return@setItems
                     }
-                    // GPX 파일에서 wpt 타입 정보를 가져와 stops 구성
-                    val stops = pts
-                        .filter { it.name.isNotEmpty() || it.type.isNotEmpty() }
-                        .map { DemoScenarioPlayer.ScenarioStop(it.name, it.lat, it.lon, it.type.ifEmpty { "unloading" }) }
                     scenario = DemoScenarioPlayer.DemoScenario(
-                        id = "gpx_${file.nameWithoutExtension}",
-                        name = "📂 ${file.nameWithoutExtension}",
-                        description = "저장된 GPX 경로 (${pts.size}포인트)",
-                        stops = stops,
-                        trackPoints = pts,
-                        isFromFile = true,
-                        sourceFile = file
+                        id          = "gpx_${file.nameWithoutExtension}",
+                        name        = "📂 ${file.nameWithoutExtension}",
+                        description = "저장된 GPX 경로 (${trackPts.size}포인트)",
+                        stops       = stops,
+                        trackPoints = trackPts,
+                        isFromFile  = true,
+                        sourceFile  = file
                     )
                 }
-                // 속도 적용 후 MainActivity 에 전달
+                // 속도 저장 → MainActivity 에서 읽음
+                getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+                    .edit().putInt("demo_speed_multiplier", speedMultiplier).apply()
+                // 시작 확인 다이얼로그
+                val selectedScenario = scenario
                 AlertDialog.Builder(this)
-                    .setTitle(scenario.name)
-                    .setMessage("${scenario.description}\n\n속도: ${speedMultiplier}x 로 재생합니다.\n\n⚠ 기기 개발자 옵션에서\n'모의 위치 허용 앱 → RouteOn' 을 설정해야 합니다.")
+                    .setTitle(selectedScenario.name)
+                    .setMessage(
+                        "${selectedScenario.description}\n\n" +
+                        "속도: ${speedMultiplier}x 로 재생합니다.\n\n" +
+                        "⚠ 기기 개발자 옵션에서\n" +
+                        "'모의 위치 허용 앱 → RouteOn' 을 설정해야 합니다."
+                    )
                     .setPositiveButton("▶ 시작") { _, _ ->
-                        (this as DemoCallback).onDemoScenarioSelected(
-                            scenario.copy().also {
-                                // speedMultiplier 는 DemoScenarioPlayer 인스턴스에 설정
-                            }
-                        )
-                        // 속도 값을 Intent extra 처럼 전달하기 위해 SharedPreferences 사용
-                        getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-                            .edit().putInt("demo_speed_multiplier", speedMultiplier).apply()
+                        (this as DemoCallback).onDemoScenarioSelected(selectedScenario)
                     }
                     .setNegativeButton("취소", null).show()
             }

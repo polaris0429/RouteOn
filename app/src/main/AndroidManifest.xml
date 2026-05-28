@@ -71,6 +71,12 @@
 
         <activity android:name=".TripHistoryActivity"             android:exported="false"/>
 
+        <!-- 배차 경로 미리보기: 지도 + 상차지/하차지 핀 + 거리/시간 -->
+        <activity
+            android:name=".TripPreviewActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"/>
+
 
         <service
             android:name=".CallNotificationListener"
