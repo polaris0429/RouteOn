@@ -192,6 +192,19 @@ class MainActivity : BaseActivity(),
     private val gpxRecorder  by lazy { GpxRecorder(this) }
     private val demoPlayer   by lazy { DemoScenarioPlayer(this) }
 
+    // ─── TripPreviewActivity 결과 처리: 수락 버튼 클릭 시 돌아옴 ───────────────
+    private val tripPreviewLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val acceptedId = result.data?.getStringExtra("accepted_trip_id")
+            if (!acceptedId.isNullOrEmpty()) {
+                acceptedTripId = acceptedId
+                fetchTrips()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -986,7 +999,7 @@ class MainActivity : BaseActivity(),
                 card.isClickable = true
                 card.isFocusable = true
                 card.setOnClickListener {
-                    startActivity(
+                    tripPreviewLauncher.launch(
                         Intent(this@MainActivity, TripPreviewActivity::class.java).apply {
                             putExtra("trip_id",        tripId)
                             putExtra("trip_name",      displayName)

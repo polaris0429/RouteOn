@@ -62,6 +62,7 @@ class TripPreviewActivity : BaseActivity() {
         val waypointsJson = intent.getStringExtra("waypoints_json") ?: "[]"
         val pickupName    = intent.getStringExtra("pickup_name")    ?: ""
         val destName      = intent.getStringExtra("dest_name")      ?: ""
+        val status        = intent.getStringExtra("status")         ?: ""
 
         // ── 뷰 초기화 ───────────────────────────────────────────────────────────
         val btnBack        = findViewById<FrameLayout>(R.id.btnBack)
@@ -152,6 +153,27 @@ class TripPreviewActivity : BaseActivity() {
         }
         tvEstLabel.visibility =
             if (!hasRealData && computedDistKm > 0) View.VISIBLE else View.GONE
+
+        // ── 배차 수락 버튼: scheduled 상태에서만 표시 ─────────────────────────
+        val btnAccept = findViewById<androidx.appcompat.widget.AppCompatButton>(R.id.btnAcceptDispatch)
+        if (status == "scheduled") {
+            val acceptBg = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.parseColor("#2E7D32"))
+                cornerRadius = dpToPx(14).toFloat()
+            }
+            btnAccept.background = acceptBg
+            btnAccept.visibility = View.VISIBLE
+            btnAccept.setOnClickListener {
+                // MainActivity 에서 acceptedTripId = tripId; fetchTrips() 로 처리됨
+                setResult(
+                    android.app.Activity.RESULT_OK,
+                    android.content.Intent().putExtra("accepted_trip_id", tripId)
+                )
+                finish()
+            }
+        } else {
+            btnAccept.visibility = View.GONE
+        }
 
         // ── WebView 설정 ─────────────────────────────────────────────────────────
         setupWebView()
@@ -244,7 +266,11 @@ class TripPreviewActivity : BaseActivity() {
             append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0,maximum-scale=5.0\">\n")
             append("<style>\n* { margin:0; padding:0; box-sizing:border-box; }\n")
             append("html, body { width:100%; height:100%; background:$mapBg; }\n")
-            append("#map { width:100%; height:100vh; }\n</style>\n</head>\n<body>\n")
+            append("#map { width:100%; height:100vh; }\n")
+            // Kakao Maps 내장 Switch/MapType 콘트롤 CSS로 숨기기
+            append(".kakao_widget,.wrap_map_type,.map_type_btn,")
+            append("[class*='map_type'],[class*='maptype'],[class*='widget']{display:none!important;}\n")
+            append("</style>\n</head>\n<body>\n")
             append("<div id=\"map\"></div>\n")
             // autoload=false: 스크립트 다운로드만, 초기화는 kakao.maps.load() 콜백에서
             append("<script type=\"text/javascript\"\n")
@@ -256,7 +282,7 @@ class TripPreviewActivity : BaseActivity() {
             append("var RAW_WP=$waypointsJson;\n")
             append("var container=document.getElementById('map');\n")
             append("var map=new kakao.maps.Map(container,{center:new kakao.maps.LatLng(37.5665,126.9780),level:8});\n")
-            append("map.addControl(new kakao.maps.ZoomControl(),kakao.maps.ControlPosition.RIGHT);\n")
+            // ZoomControl 미추가 — 핀치줌 사용, Switch 토글 제거
             append("var bounds=new kakao.maps.LatLngBounds();\n")
             append("var allPos=[]; var items=[];\n")
             append("for(var i=0;i<RAW_WP.length;i++){\n")
@@ -271,7 +297,7 @@ class TripPreviewActivity : BaseActivity() {
             // 연결 점선
             append("if(allPos.length>=2){\n")
             append("  new kakao.maps.Polyline({map:map,path:allPos,")
-            append("strokeWeight:3,strokeColor:'$dashColor',strokeOpacity:0.65,strokeStyle:'dashed'});\n")
+            append("strokeWeight:6,strokeColor:'#F97316',strokeOpacity:0.92,strokeStyle:'dashed'});\n")
             append("}\n")
             // 마커 루프
             append("for(var j=0;j<items.length;j++){\n")
@@ -300,6 +326,25 @@ class TripPreviewActivity : BaseActivity() {
             // 카메라 Fit
             append("if(allPos.length>=2){ map.setBounds(bounds,80,60,260,60); }\n")
             append("else if(allPos.length===1){ map.setCenter(allPos[0]); map.setLevel(5); }\n")
+            // Switch 콘트롤 JS 제거: CSS가 못 잡는 경우 대비
+            append("function _rmSwitch(){\n")
+            append("  var m=document.getElementById('map');if(!m)return;\n")
+            append("  var all=m.querySelectorAll('*');\n")
+            append("  for(var i=0;i<all.length;i++){\n")
+            append("    var el=all[i];\n")
+            append("    if(el.children.length===0){\n")
+            append("      var t=(el.textContent||'').trim();\n")
+            append("      if(t==='Switch'||t==='지도'||t==='스카이뷰'||t==='위성지도'){\n")
+            append("        var p=el.parentElement;\n")
+            append("        while(p&&p!==m){\n")
+            append("          if(p.style&&p.style.position==='absolute'){p.style.display='none';break;}\n")
+            append("          p=p.parentElement;\n")
+            append("        }\n")
+            append("      }\n")
+            append("    }\n")
+            append("  }\n")
+            append("}\n")
+            append("setTimeout(_rmSwitch,300);setTimeout(_rmSwitch,900);setTimeout(_rmSwitch,2000);\n")
             append("});\n")
             append("</script>\n</body>\n</html>")
         }

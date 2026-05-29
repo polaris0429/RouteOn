@@ -8,7 +8,9 @@
     <WebView
         android:id="@+id/webViewMap"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent" >
+
+    </WebView>
 
     <!-- ══ 상단 플로팅 뒤로가기 버튼 ══ -->
     <FrameLayout
@@ -269,6 +271,27 @@
                     android:layout_marginStart="8dp"
                     android:visibility="gone" />
             </LinearLayout>
+
+            <!-- 구분선 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#EEEEEE"
+                android:layout_marginTop="14dp"
+                android:layout_marginBottom="12dp" />
+
+            <!-- 배차 수락 버튼 (scheduled 상태에서만 표시됨) -->
+            <androidx.appcompat.widget.AppCompatButton
+                android:id="@+id/btnAcceptDispatch"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:text="배차 수락"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:stateListAnimator="@null"
+                android:elevation="0dp"
+                android:visibility="gone" />
 
         </LinearLayout>
 
