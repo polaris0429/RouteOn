@@ -41,18 +41,10 @@ import java.net.URL
 abstract class BaseActivity : AppCompatActivity() {
 
     // ─── 개발자 모드 콜백 인터페이스 ─────────────────────────────────────────
-    /**
-     * 개발자 메뉴의 "😴 휴식 모드" 버튼이 눌렸을 때 오버레이를 표시하는 인터페이스.
-     * 현재는 MainActivity만 구현한다.
-     */
     interface DevRestModeCallback {
         fun triggerRestModeDemo()
     }
 
-    /**
-     * 개발자 메뉴의 "🗺️ 데모" 에서 시나리오가 선택됐을 때 호출되는 인터페이스.
-     * MainActivity가 구현해 실제 네비 시작 + 시뮬레이터 재생을 처리한다.
-     */
     interface DemoCallback {
         fun onDemoScenarioSelected(scenario: DemoScenarioPlayer.DemoScenario)
     }
@@ -61,6 +53,9 @@ abstract class BaseActivity : AppCompatActivity() {
     private var devFab: ImageButton? = null
     private var devMenuContainer: LinearLayout? = null
     private var menuVisible = false
+
+    // globalChatReceiver 중복 등록 방지 플래그
+    private var isGlobalReceiverRegistered = false
 
     // 글로벌 채팅 수신 리시버: 채팅방 밖에 있을 때 메시지가 오면 알림(Toast)을 띄움
     private val globalChatReceiver = object : BroadcastReceiver() {
@@ -81,23 +76,41 @@ abstract class BaseActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 화면에 보이기 시작할 때 WS 서비스 가동 + globalChatReceiver 등록
+        ChatWebSocketService.start(this)
+        if (!isGlobalReceiverRegistered) {
+            LocalBroadcastManager.getInstance(this).registerReceiver(
+                globalChatReceiver,
+                IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE)
+            )
+            isGlobalReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // onPause가 아닌 onStop에서 해제한다.
+        // 이유: 내비게이션 View, 다이얼로그, 권한 팝업 등이 화면 위에 올라와서
+        // Activity가 onPause 상태가 되어도 WS 브로드캐스트를 계속 수신해야 한다.
+        // onStop은 Activity가 실제로 화면에서 완전히 사라질 때만 호출된다.
+        if (isGlobalReceiverRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(globalChatReceiver)
+            isGlobalReceiverRegistered = false
+        }
+    }
+
     override fun onResume() {
         super.onResume()
-        // 앱이 포그라운드에 있는 동안 웹소켓 서비스 상시 가동
-        ChatWebSocketService.start(this)
-
-        LocalBroadcastManager.getInstance(this).registerReceiver(
-            globalChatReceiver,
-            IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE)
-        )
-
         // 개발자 모드 FAB 동기화 (다른 화면에서 활성화 후 돌아온 경우)
         syncDevFab()
     }
 
     override fun onPause() {
         super.onPause()
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(globalChatReceiver)
+        // receiver 해제는 onStop에서 처리 — 여기서는 아무것도 하지 않음
+        // (내비/다이얼로그로 인한 partial-pause 시 채팅 Toast 알림 유지)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -301,16 +314,11 @@ abstract class BaseActivity : AppCompatActivity() {
         showDemoScenarioPicker()
     }
 
-    /**
-     * 내장 시나리오 3 개 + 저장된 GPX 파일 목록을 다이얼로그로 표시한다.
-     * 사용자가 항목을 선택하면 [DemoCallback.onDemoScenarioSelected] 를 호출한다.
-     */
     private fun showDemoScenarioPicker() {
         val builtin  = DemoScenarioPlayer.builtinScenarios()
         val recorder = GpxRecorder(this)
         val gpxFiles = recorder.listSavedFiles()
 
-        // 항목 라벨 구성 (내장 + 파일)
         val labels = mutableListOf<String>()
         builtin.forEach { labels.add(it.name) }
         gpxFiles.forEach { labels.add("📂 ${it.nameWithoutExtension}") }
@@ -320,7 +328,6 @@ abstract class BaseActivity : AppCompatActivity() {
             return
         }
 
-        // 속도 배율 라디오 (1x / 3x / 5x)
         val density = resources.displayMetrics.density
         val layout = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
@@ -330,9 +337,6 @@ abstract class BaseActivity : AppCompatActivity() {
             text = "⚡ 재생 속도"
             textSize = 12f
             setTextColor(android.graphics.Color.GRAY)
-        }
-        val speedRow = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
         }
         var speedMultiplier = 3
         val speeds = listOf(1 to "1x", 3 to "3x", 5 to "5x")
@@ -362,7 +366,6 @@ abstract class BaseActivity : AppCompatActivity() {
                     scenario = builtin[idx].copy()
                 } else {
                     val file      = gpxFiles[idx - builtin.size]
-                    // trkpt → 이동 경로 / wpt → 경유지(stops)
                     val trackPts  = recorder.parseGpxTrack(file)
                     val stops     = recorder.parseGpxStops(file)
                     if (trackPts.size < 2) {
@@ -379,10 +382,8 @@ abstract class BaseActivity : AppCompatActivity() {
                         sourceFile  = file
                     )
                 }
-                // 속도 저장 → MainActivity 에서 읽음
                 getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
                     .edit().putInt("demo_speed_multiplier", speedMultiplier).apply()
-                // 시작 확인 다이얼로그
                 val selectedScenario = scenario
                 AlertDialog.Builder(this)
                     .setTitle(selectedScenario.name)
@@ -514,17 +515,8 @@ abstract class BaseActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * 개발자 메뉴 — 😴 휴식 모드 데모
-     *
-     * MainActivity가 DevRestModeCallback 을 구현하고 있으면 오버레이를 직접 표시하고,
-     * 다른 화면에서 눌렀다면 메인 화면으로 이동하라는 안내를 보여준다.
-     *
-     * 개발자 모드에서는 타이머가 15분 대신 10초로 표시되어 빠른 데모가 가능하다.
-     */
     private fun onDevMenu_RestMode() {
         if (this is DevRestModeCallback) {
-            // 현재 Activity(MainActivity)에서 직접 오버레이 트리거
             AlertDialog.Builder(this)
                 .setTitle("😴 휴식 모드 데모")
                 .setMessage(
@@ -539,7 +531,6 @@ abstract class BaseActivity : AppCompatActivity() {
                 .setNegativeButton("취소", null)
                 .show()
         } else {
-            // 다른 화면(설정, 채팅 등)에서 눌렀을 때 안내
             AlertDialog.Builder(this)
                 .setTitle("😴 휴식 모드 데모")
                 .setMessage(

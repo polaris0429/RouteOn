@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -46,6 +47,9 @@ class ChatActivity : BaseActivity() {
     private lateinit var etMessage: EditText
     private var conversationId: String? = null
 
+    // 진행 중인 코루틴을 추적하여 Activity 종료 시 취소
+    private val activityScope = CoroutineScope(Dispatchers.Main + Job())
+
     // ── WS 메시지 수신 BroadcastReceiver ────────────────────────────────────
     private val chatReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -54,7 +58,7 @@ class ChatActivity : BaseActivity() {
             val convId    = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CONV_ID)     ?: ""
             val createdAt = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CREATED_AT)  ?: ""
 
-            // ★ Fix: 현재 열린 대화방 메시지만 처리 (다른 대화방 메시지 무시)
+            // 현재 열린 대화방 메시지만 처리 (다른 대화방 메시지 무시)
             val myConvId = conversationId
             if (myConvId != null && convId.isNotEmpty() && convId != myConvId) {
                 Log.d("ChatActivity", "다른 대화방 메시지 무시: recv=$convId mine=$myConvId")
@@ -74,15 +78,20 @@ class ChatActivity : BaseActivity() {
         }
     }
 
+    // receiver가 현재 등록되어 있는지 추적 (중복 등록/해제 방지)
+    private var isReceiverRegistered = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
         setupUI()
+
+        // WS 서비스가 살아있는지 확인하고 재연결
         ChatWebSocketService.start(this)
 
-        // ★ Fix: 현재 로그인 user_id와 캐시된 user_id 비교 → 다르면 캐시 무효화
-        val prefs        = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
-        val chatPrefs    = getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE)
+        // 현재 로그인 user_id와 캐시된 user_id 비교 → 다르면 캐시 무효화
+        val prefs         = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
+        val chatPrefs     = getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE)
         val currentUserId = prefs.getString("user_id", null)
         val cachedUserId  = chatPrefs.getString("cached_user_id", null)
         val cachedConvId  = chatPrefs.getString("chat_conversation_id", null)
@@ -109,15 +118,16 @@ class ChatActivity : BaseActivity() {
             return
         }
 
-        CoroutineScope(Dispatchers.IO).launch {
+        // 타임아웃을 넉넉히 설정 (내비 SDK가 네트워크를 사용 중일 수 있음)
+        activityScope.launch(Dispatchers.IO) {
             try {
                 // STEP 1: 채팅 가능한 파트너(관리자) 목록 조회
                 val partnersConn = (URL("${Constants.BASE_URL}/chat/partners")
                     .openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("Authorization", "Bearer $token")
-                    connectTimeout = 10_000
-                    readTimeout    = 10_000
+                    connectTimeout = 15_000   // 내비 중 네트워크 부하를 고려해 여유 있게
+                    readTimeout    = 15_000
                 }
 
                 val partnersCode = partnersConn.responseCode
@@ -157,8 +167,8 @@ class ChatActivity : BaseActivity() {
                     doOutput = true
                     setRequestProperty("Authorization", "Bearer $token")
                     setRequestProperty("Content-Type", "application/json")
-                    connectTimeout = 10_000
-                    readTimeout    = 10_000
+                    connectTimeout = 15_000
+                    readTimeout    = 15_000
                 }
                 OutputStreamWriter(convConn.outputStream).use {
                     it.write(JSONObject().apply { put("partner_id", partnerId) }.toString())
@@ -208,7 +218,6 @@ class ChatActivity : BaseActivity() {
     }
 
     private fun setupUI() {
-        // ★ Fix: 툴바 뒤로가기 버튼 연결 (기존 코드에서 누락됨)
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
 
@@ -218,6 +227,16 @@ class ChatActivity : BaseActivity() {
         recycler.adapter = adapter
 
         etMessage = findViewById(R.id.etMessage)
+
+        // IME 조합 중(한글 입력 중) Enter 키로 전송되지 않도록 방지
+        etMessage.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_ENTER &&
+                event.action == android.view.KeyEvent.ACTION_DOWN) {
+                // 소프트 키보드의 Enter는 별도 처리 (sendMessage에서 처리)
+                false
+            } else false
+        }
+
         findViewById<FloatingActionButton>(R.id.btnSend).setOnClickListener {
             val text = etMessage.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -228,6 +247,7 @@ class ChatActivity : BaseActivity() {
     }
 
     private fun addReceivedMessageUI(text: String, id: String, time: String) {
+        // 이미 UI 스레드이거나 백그라운드에서 호출 시 모두 안전하게 처리
         runOnUiThread {
             messages.add(ChatMessage(id, text, false, time, System.currentTimeMillis()))
             adapter.notifyItemInserted(messages.size - 1)
@@ -239,14 +259,14 @@ class ChatActivity : BaseActivity() {
     private fun fetchLatestMessageSilent(convId: String) {
         val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
-        CoroutineScope(Dispatchers.IO).launch {
+        activityScope.launch(Dispatchers.IO) {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$convId/messages?limit=1")
                     .openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("Authorization", "Bearer $t")
-                    connectTimeout = 8_000
-                    readTimeout    = 8_000
+                    connectTimeout = 10_000
+                    readTimeout    = 10_000
                 }
                 if (conn.responseCode == 200) {
                     val arr = JSONArray(conn.inputStream.bufferedReader().readText())
@@ -279,14 +299,14 @@ class ChatActivity : BaseActivity() {
     private fun fetchMessageHistory(convId: String) {
         val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
-        CoroutineScope(Dispatchers.IO).launch {
+        activityScope.launch(Dispatchers.IO) {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$convId/messages?limit=50")
                     .openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     setRequestProperty("Authorization", "Bearer $t")
-                    connectTimeout = 10_000
-                    readTimeout    = 10_000
+                    connectTimeout = 15_000
+                    readTimeout    = 15_000
                 }
                 val code = conn.responseCode
                 when (code) {
@@ -313,7 +333,7 @@ class ChatActivity : BaseActivity() {
                         }
                     }
                     403, 404 -> {
-                        // ★ Fix: 캐시된 conversation_id가 유효하지 않으면 캐시 지우고 재초기화
+                        // 캐시된 conversation_id가 유효하지 않으면 캐시 지우고 재초기화
                         Log.w("ChatActivity", "⚠️ conversation_id 유효하지 않음 (HTTP $code) — 재초기화")
                         getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE).edit()
                             .remove("chat_conversation_id").apply()
@@ -345,7 +365,8 @@ class ChatActivity : BaseActivity() {
         adapter.notifyItemInserted(messages.size - 1)
         recycler.scrollToPosition(messages.size - 1)
 
-        CoroutineScope(Dispatchers.IO).launch {
+        // 타임아웃을 넉넉히 설정 (내비 중 네트워크 경합 방지)
+        activityScope.launch(Dispatchers.IO) {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$cid/messages")
                     .openConnection() as HttpURLConnection).apply {
@@ -353,16 +374,25 @@ class ChatActivity : BaseActivity() {
                     doOutput = true
                     setRequestProperty("Authorization", "Bearer $t")
                     setRequestProperty("Content-Type", "application/json")
-                    connectTimeout = 10_000
-                    readTimeout    = 10_000
+                    connectTimeout = 15_000
+                    readTimeout    = 15_000
                 }
                 OutputStreamWriter(conn.outputStream).use {
                     it.write(JSONObject().apply { put("content", text) }.toString())
                 }
                 val code = conn.responseCode
                 Log.d("ChatActivity", "📤 메시지 전송: HTTP $code")
+                if (code !in 200..201) {
+                    Log.e("ChatActivity", "❌ 메시지 전송 실패: HTTP $code")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@ChatActivity, "메시지 전송에 실패했습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             } catch (e: Exception) {
                 Log.e("ChatActivity", "❌ 메시지 전송 오류: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@ChatActivity, "네트워크 오류로 전송 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -371,7 +401,7 @@ class ChatActivity : BaseActivity() {
         if (mid.isEmpty()) return
         val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
             .getString("access_token", null) ?: return
-        CoroutineScope(Dispatchers.IO).launch {
+        activityScope.launch(Dispatchers.IO) {
             try {
                 val conn = (URL("${Constants.BASE_URL}/chat/conversations/$cid/read")
                     .openConnection() as HttpURLConnection).apply {
@@ -400,7 +430,6 @@ class ChatActivity : BaseActivity() {
     private fun isoToHHmm(iso: String): String {
         if (iso.isEmpty()) return ""
         return try {
-            // ★ Fix: '.' 이후 소수점 초 제거하여 안정적 파싱
             val normalized = iso.substringBefore('.')
                 .takeIf { it.length >= 19 } ?: iso.take(19)
             val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(normalized)
@@ -411,18 +440,65 @@ class ChatActivity : BaseActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        ChatWebSocketService.isChatActivityVisible = true
+    /**
+     * chatReceiver를 안전하게 등록한다.
+     * 이미 등록된 경우 중복 등록하지 않는다.
+     *
+     * onResume뿐만 아니라 onStart에서도 등록하여
+     * 내비게이션 중 화면이 부분적으로 가려져도 메시지를 수신할 수 있게 한다.
+     */
+    private fun registerChatReceiver() {
+        if (isReceiverRegistered) return
         LocalBroadcastManager.getInstance(this).registerReceiver(
             chatReceiver, IntentFilter(ChatWebSocketService.ACTION_CHAT_MESSAGE)
         )
+        isReceiverRegistered = true
+        Log.d("ChatActivity", "✅ chatReceiver 등록")
+    }
+
+    private fun unregisterChatReceiver() {
+        if (!isReceiverRegistered) return
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(chatReceiver)
+        isReceiverRegistered = false
+        Log.d("ChatActivity", "🚫 chatReceiver 해제")
+    }
+
+    // ── 생명주기: onStart/onStop 기준으로 등록/해제 ─────────────────────────
+    // onResume/onPause 대신 onStart/onStop을 사용하는 이유:
+    // 내비게이션 View나 다이얼로그가 위에 올라와 ChatActivity가 onPause가 되어도
+    // onStop은 호출되지 않으므로 chatReceiver가 살아있게 된다.
+    override fun onStart() {
+        super.onStart()
+        ChatWebSocketService.isChatActivityVisible = true
+        registerChatReceiver()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        ChatWebSocketService.isChatActivityVisible = false
+        unregisterChatReceiver()
+    }
+
+    // onResume/onPause에서는 isChatActivityVisible만 갱신 (receiver는 onStart/onStop에서 관리)
+    override fun onResume() {
+        super.onResume()
+        ChatWebSocketService.isChatActivityVisible = true
     }
 
     override fun onPause() {
         super.onPause()
-        ChatWebSocketService.isChatActivityVisible = false
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(chatReceiver)
+        // 완전히 화면을 떠나는 것(onStop)이 아니라면 isChatActivityVisible을 false로 바꾸지 않는다.
+        // onStop에서 처리하므로 여기서는 아무것도 하지 않는다.
+        // (BaseActivity.onPause에서 globalChatReceiver는 여전히 unregister되지만,
+        //  ChatActivity 자체의 chatReceiver는 onStop까지 살아있다.)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // 혹시 모를 경우를 대비해 Job 취소 (메모리 누수 방지)
+        activityScope.coroutineContext[Job.Key]?.cancel()
+        // receiver가 아직 등록된 경우 해제 (onStop이 호출 안 된 엣지 케이스)
+        unregisterChatReceiver()
     }
 
     inner class ChatAdapter(private val list: List<ChatMessage>) :
