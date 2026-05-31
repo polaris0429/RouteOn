@@ -30,17 +30,29 @@
          휴게소 휴식 오버레이
          - rest_stop 150m 이내 진입 시 표시
          - naviContainer 위에 그려지고 bottomSheet 아래에 위치
+         - 배경(반투명 딤): 터치 시 오버레이 일시 숨김
+         - 중앙 카드:      항상 불투명
          ===================================================== -->
     <FrameLayout
         android:id="@+id/restStopOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginBottom="92dp"
-        android:background="#FF000000"
+        android:background="#B3000000"
         android:visibility="gone">
 
-        <!-- 중앙 카드 -->
+        <!-- 반투명 배경 터치 감지 레이어 (카드 밖 영역) -->
+        <View
+            android:id="@+id/restStopDimLayer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- 중앙 카드 (항상 불투명, dimLayer 위에 배치) -->
         <LinearLayout
+            android:id="@+id/restStopCard"
             android:layout_width="300dp"
             android:layout_height="wrap_content"
             android:layout_gravity="center"

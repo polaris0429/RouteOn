@@ -153,6 +153,13 @@ class MainActivity : BaseActivity(),
     private val REST_STOP_RADIUS_M = 150f
     private val REST_STOP_DURATION_MS = 15 * 60 * 1000L
     private val REST_STOP_DEMO_DURATION_MS = 10 * 1000L
+    private var autoCompleteTriggered = false  // 최종 목적지 자동 완료 중복 방지
+
+    // ─── 휴게소 오버레이 일시 숨김 관련 ───────────────────────────────────────
+    private val restOverlayHandler = Handler(Looper.getMainLooper())
+    private var isOverlayTemporarilyHidden = false
+    private val OVERLAY_RESHOW_DELAY_MS = 5_000L  // 5초 무입력 후 재표시
+    private val restOverlayReshowRunnable = Runnable { reshowRestStopOverlay() }
 
     private val isNightMode: Boolean
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -364,6 +371,7 @@ class MainActivity : BaseActivity(),
         sensorManager.unregisterListener(this)
         permissionDialog?.dismiss(); permissionDialog = null
         restStopCountDown?.cancel(); restStopCountDown = null
+        restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
         demoPlayer.stop()
         if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized)
             fusedLocationClient.removeLocationUpdates(locationCallback)
@@ -389,6 +397,17 @@ class MainActivity : BaseActivity(),
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    /**
+     * 엔드 유저 터치/키 입력 시 호출 → 오버레이 일시 숨김 중이면 5초 타이머 리셋
+     */
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        if (isRestStopActive && isOverlayTemporarilyHidden) {
+            restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
+            restOverlayHandler.postDelayed(restOverlayReshowRunnable, OVERLAY_RESHOW_DELAY_MS)
+        }
+    }
 
     private fun vibrate(ms: Long = 200) {
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
@@ -418,6 +437,7 @@ class MainActivity : BaseActivity(),
                         if (status == "completed" || status == "cancelled") {
                             KNSDK.sharedGuidance()?.stop()
                             binding.btnCompleteTrip.visibility = View.GONE
+                            autoCompleteTriggered = false
                             currentNaviTripId = null; currentStops.clear(); fetchTrips()
                         }
                     }
@@ -449,6 +469,7 @@ class MainActivity : BaseActivity(),
     private fun showRestStopOverlay(stopName: String) {
         if (isRestStopActive) return
         isRestStopActive = true
+        isOverlayTemporarilyHidden = false
         val isDemoMode = DeveloperModeManager.isEnabled(this)
         val durationMs = if (isDemoMode) REST_STOP_DEMO_DURATION_MS else REST_STOP_DURATION_MS
         val warnThresholdSec = if (isDemoMode) 5L else 60L
@@ -463,6 +484,12 @@ class MainActivity : BaseActivity(),
         } else {
             binding.tvRestTimerLabel.text = "남은 휴식 시간"; binding.btnRestStopSkip.visibility = View.GONE
         }
+
+        // ── 반투명 배경 터치 시 일시 숨김 ─────────────────────────────────
+        binding.restStopDimLayer.setOnClickListener {
+            if (!isOverlayTemporarilyHidden) temporarilyHideRestStopOverlay()
+        }
+
         binding.restStopOverlay.alpha = 0f; binding.restStopOverlay.visibility = View.VISIBLE
         binding.restStopOverlay.animate().alpha(1f).setDuration(450).start()
         try {
@@ -489,8 +516,34 @@ class MainActivity : BaseActivity(),
 
     override fun triggerRestModeDemo() { showRestStopOverlay("데모 휴게소") }
 
+    /** 히식 올립 배경 터치 → 오버레이 일시 숨김 + 5초 후 재표시 */
+    private fun temporarilyHideRestStopOverlay() {
+        if (!isRestStopActive || isOverlayTemporarilyHidden) return
+        isOverlayTemporarilyHidden = true
+        restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
+        // 오버레이 페이드아웃
+        binding.restStopOverlay.animate().alpha(0f).setDuration(250).withEndAction {
+            binding.restStopOverlay.visibility = View.GONE
+            Log.d("RestStop", "부 터치 → 오버레이 일시 하포")
+        }.start()
+        // 5초 후 자동 재표시 예약
+        restOverlayHandler.postDelayed(restOverlayReshowRunnable, OVERLAY_RESHOW_DELAY_MS)
+    }
+
+    /** 5초 무입력 후 또는 상태목록에서 오버레이 재표시 */
+    private fun reshowRestStopOverlay() {
+        if (!isRestStopActive || !isOverlayTemporarilyHidden) return
+        isOverlayTemporarilyHidden = false
+        binding.restStopOverlay.alpha = 0f
+        binding.restStopOverlay.visibility = View.VISIBLE
+        binding.restStopOverlay.animate().alpha(1f).setDuration(350).start()
+        Log.d("RestStop", "5초 무입력 → 오버레이 재표시")
+    }
+
     private fun hideRestStopOverlay() {
         isRestStopActive = false; restStopCountDown?.cancel(); restStopCountDown = null
+        isOverlayTemporarilyHidden = false
+        restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
         binding.tvRestTimer.setTextColor(Color.parseColor("#4CAF50"))
         binding.restStopOverlay.animate().alpha(0f).setDuration(600).withEndAction { binding.restStopOverlay.visibility = View.GONE }.start()
         Toast.makeText(this, "✅ 휴식이 완료되었습니다. 안전 운행하세요! 🚛", Toast.LENGTH_LONG).show()
@@ -498,6 +551,7 @@ class MainActivity : BaseActivity(),
     }
 
     private fun checkProximityToStops(currentLat: Double, currentLng: Double) {
+        // ── 1. 휴게소 근접 체크 ──────────────────────────────────────────────
         if (!isRestStopActive) {
             for (stop in currentStops) {
                 if (stop.type != "rest_stop") continue
@@ -513,10 +567,34 @@ class MainActivity : BaseActivity(),
                 }
             }
         }
+        // 휴게소 오버레이 중에는 다른 버튼 숨김
         if (isRestStopActive) { runOnUiThread { binding.btnCompleteTrip.visibility = View.GONE }; return }
+
+        // ── 2. 최종 목적지 100m 이내 → 자동 운행 완료 ─────────────────────
+        if (!autoCompleteTriggered && currentNaviTripId != null) {
+            val destStop = currentStops.lastOrNull { it.type == "destination" }
+                ?: currentStops.lastOrNull()
+            if (destStop != null) {
+                val distDest = FloatArray(1)
+                android.location.Location.distanceBetween(currentLat, currentLng, destStop.lat, destStop.lng, distDest)
+                if (distDest[0] <= 100f) {
+                    autoCompleteTriggered = true
+                    Log.d("AutoComplete", "🏁 최종 목적지 100m 이내 도달 (${distDest[0].toInt()}m) → 자동 운행 완료")
+                    val tripId = currentNaviTripId!!
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "🏁 목적지 도착! 운행을 완료합니다.", Toast.LENGTH_LONG).show()
+                        binding.btnCompleteTrip.visibility = View.GONE
+                    }
+                    updateTripStatus(tripId, "completed")
+                    return
+                }
+            }
+        }
+
+        // ── 3. 경유지(상차지·하차지) 100m 이내 → 수동 완료 버튼 표시 ────────
         var nearbyStop: RouteStop? = null
         for (stop in currentStops) {
-            if (stop.type == "rest_stop") continue
+            if (stop.type == "rest_stop" || stop.type == "destination") continue
             val dist = FloatArray(1)
             android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, dist)
             if (dist[0] <= 100) { nearbyStop = stop; break }
@@ -525,11 +603,6 @@ class MainActivity : BaseActivity(),
             if (nearbyStop != null) {
                 binding.btnCompleteTrip.visibility = View.VISIBLE
                 when (nearbyStop.type) {
-                    "destination" -> {
-                        binding.btnCompleteTrip.text = getString(R.string.navi_btn_complete_dest)
-                        binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#2E7D32"))
-                        binding.btnCompleteTrip.setOnClickListener { currentNaviTripId?.let { updateTripStatus(it, "completed") } }
-                    }
                     "loading" -> {
                         binding.btnCompleteTrip.text = "🚛 상차 완료 (${nearbyStop.name})"
                         binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E65100"))
@@ -609,6 +682,7 @@ class MainActivity : BaseActivity(),
     private fun requestReplan(tripId: String, currentLat: Double, currentLng: Double, wps: JSONArray) {
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         Toast.makeText(this, getString(R.string.navi_replanning), Toast.LENGTH_LONG).show()
+        autoCompleteTriggered = false
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = URL("${Constants.BASE_URL}/optimize/replan").openConnection() as HttpURLConnection
@@ -922,20 +996,9 @@ class MainActivity : BaseActivity(),
                 plusRow2.addView(plusBtn)
 
                 btnRow.addView(androidx.appcompat.widget.AppCompatButton(this).apply {
-                    text = getString(R.string.navi_btn_complete_dest); textSize = 14f; setTypeface(null, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor(if (isNightMode) "#90CAF9" else "#1565C0"))
-                    background = GradientDrawable().apply { setColor(if (isNightMode) Color.parseColor("#0D2137") else Color.parseColor("#E3F2FD")); cornerRadius = dpToPx(12).toFloat() }
-                    stateListAnimator = null; elevation = 0f; layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f).apply { marginEnd = dpToPx(8) }
-                    setOnClickListener {
-                        AlertDialog.Builder(this@MainActivity).setTitle(getString(R.string.navi_cancel_confirm_title)).setMessage("운행을 완료 처리하시겠습니까?")
-                            .setPositiveButton(getString(R.string.navi_yes)) { _, _ -> acceptedTripId = null; updateTripStatus(tripId, "completed") }
-                            .setNegativeButton(getString(R.string.navi_no), null).show()
-                    }
-                })
-                btnRow.addView(androidx.appcompat.widget.AppCompatButton(this).apply {
                     text = getString(R.string.navi_btn_start); textSize = 14f; setTypeface(null, android.graphics.Typeface.BOLD); setTextColor(Color.WHITE)
                     background = GradientDrawable().apply { setColor(Color.parseColor("#2E7D32")); cornerRadius = dpToPx(12).toFloat() }
-                    stateListAnimator = null; elevation = 0f; layoutParams = LinearLayout.LayoutParams(0, dpToPx(48), 1f)
+                    stateListAnimator = null; elevation = 0f; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(48))
                     setOnClickListener {
                         val originText = originField.text.toString().trim()
                         val destText   = destField.text.toString().trim()
@@ -1051,6 +1114,7 @@ class MainActivity : BaseActivity(),
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         Toast.makeText(this, getString(R.string.navi_optimizing), Toast.LENGTH_LONG).show()
         visitedRestStopKeys.clear()
+        autoCompleteTriggered = false
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val conn = URL("${Constants.BASE_URL}/optimize").openConnection() as HttpURLConnection
@@ -1432,6 +1496,7 @@ class MainActivity : BaseActivity(),
         currentNaviTripId = demoTripId
         currentStops.clear()
         visitedRestStopKeys.clear()
+        autoCompleteTriggered = false
         scenario.stops.forEach { stop ->
             currentStops.add(RouteStop(
                 id    = "",
