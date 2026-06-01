@@ -501,6 +501,11 @@ class RegisterActivity : AppCompatActivity() {
                     OutputStreamWriter(conn.outputStream).use { it.write(jsonParam.toString()) }
 
                     val responseCode = conn.responseCode
+                    val responseBody = try {
+                        if (responseCode == 200) conn.inputStream.bufferedReader().readText()
+                        else conn.errorStream?.bufferedReader()?.readText() ?: ""
+                    } catch (_: Exception) { "" }
+
                     withContext(Dispatchers.Main) {
                         btnSendSms.isEnabled = true
                         if (responseCode == 200) {
@@ -508,7 +513,9 @@ class RegisterActivity : AppCompatActivity() {
                             otpBoxes[0].requestFocus()
                             Toast.makeText(this@RegisterActivity, "인증번호 발송 완료!", Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(this@RegisterActivity, "발송 실패 (코드: $responseCode)", Toast.LENGTH_LONG).show()
+                            // 실제 오류 메시지를 토스트로 표시해 원인 파악
+                            val errMsg = responseBody.take(200)
+                            Toast.makeText(this@RegisterActivity, "[$responseCode] $errMsg", Toast.LENGTH_LONG).show()
                         }
                     }
                 } catch (e: Exception) {
