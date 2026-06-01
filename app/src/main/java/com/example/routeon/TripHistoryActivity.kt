@@ -124,8 +124,48 @@ class TripHistoryActivity : BaseActivity() {
                             durMin = routeObj.optDouble("estimated_duration_min", 0.0)
                         }
 
-                        val completedAt = obj.optString("completed_at").takeIf { it.isNotEmpty() }
-                        val startedAt   = obj.optString("started_at").takeIf   { it.isNotEmpty() }
+                        // JSON null 값은 optString 이 "null" 문자열로 반환하므로 명시적으로 걸러낸다
+                        fun String?.nullSafe() = takeIf { !it.isNullOrEmpty() && it != "null" }
+
+                        val completedAt = obj.optString("completed_at").nullSafe()
+                        val startedAt   = obj.optString("started_at").nullSafe()
+
+                        // dest_name: null/빈값이면 waypoints 마지막 unloading 이름으로 폴백
+                        val destName = run {
+                            val raw = obj.optString("dest_name").nullSafe()
+                            if (raw != null) return@run raw
+
+                            // optimized_route.route 에서 마지막 unloading/destination 이름 시도
+                            val route = routeObj?.optJSONArray("route")
+                            if (route != null) {
+                                for (ri in route.length() - 1 downTo 0) {
+                                    val node     = route.optJSONObject(ri) ?: continue
+                                    val nodeType = node.optString("type", "")
+                                    val nodeName = node.optString("name").nullSafe()
+                                    if ((nodeType == "destination" || nodeType == "waypoint") && nodeName != null)
+                                        return@run nodeName
+                                }
+                            }
+
+                            // trips.waypoints 에서 마지막 unloading 이름 시도
+                            val wps = obj.optJSONArray("waypoints")
+                            if (wps != null) {
+                                for (wi in wps.length() - 1 downTo 0) {
+                                    val wp     = wps.optJSONObject(wi) ?: continue
+                                    val wpType = wp.optString("type", "")
+                                    val wpName = wp.optString("name").nullSafe()
+                                    if (wpType == "unloading" && wpName != null)
+                                        return@run wpName
+                                }
+                                // unloading 없으면 마지막 waypoint 이름
+                                for (wi in wps.length() - 1 downTo 0) {
+                                    val wpName = wps.optJSONObject(wi)?.optString("name").nullSafe()
+                                    if (wpName != null) return@run wpName
+                                }
+                            }
+
+                            "목적지"
+                        }
 
                         // 날짜 레이블 (완료일 우선, 없으면 생성일)
                         val rawDate = (completedAt ?: obj.optString("created_at", "")).take(10)
@@ -133,7 +173,7 @@ class TripHistoryActivity : BaseActivity() {
                         records.add(
                             TripRecord(
                                 id          = obj.optString("id", ""),
-                                destName    = obj.optString("dest_name", "목적지"),
+                                destName    = destName,
                                 status      = status,
                                 distanceKm  = distKm,
                                 durationMin = durMin,
@@ -302,17 +342,28 @@ class TripHistoryActivity : BaseActivity() {
         }
 
         inner class RecordVH(v: View) : RecyclerView.ViewHolder(v) {
-            private val tvDest:      TextView = v.findViewById(R.id.tvDest)
-            private val tvStatus:    TextView = v.findViewById(R.id.tvStatus)
-            private val tvDistance:  TextView = v.findViewById(R.id.tvDistance)
-            private val tvDuration:  TextView = v.findViewById(R.id.tvDuration)
-            private val tvCompleted: TextView = v.findViewById(R.id.tvCompleted)
+            private val tvDest:           TextView = v.findViewById(R.id.tvDest)
+            private val tvStatus:         TextView = v.findViewById(R.id.tvStatus)
+            private val tvDistance:       TextView = v.findViewById(R.id.tvDistance)
+            private val tvDuration:       TextView = v.findViewById(R.id.tvDuration)
+            private val tvCompleted:      TextView = v.findViewById(R.id.tvCompleted)
+            private val tvCompletedLabel: TextView = v.findViewById(R.id.tvCompletedLabel)
 
             fun bind(t: TripRecord) {
                 tvDest.text     = t.destName
                 tvDistance.text = if (t.distanceKm > 0) "${"%.1f".format(t.distanceKm)} km" else "— km"
                 tvDuration.text = if (t.durationMin > 0) formatDuration(t.durationMin) else "—"
-                tvCompleted.text = formatDateTime(t.completedAt ?: t.startedAt)
+                // 완료 운행은 completedAt, 취소 운행은 startedAt(출발 시각)으로 폴백, 둘 다 없으면 "—"
+                when (t.status) {
+                    "cancelled" -> {
+                        tvCompletedLabel.text = "출발 일시"
+                        tvCompleted.text = formatDateTime(t.startedAt)
+                    }
+                    else -> {
+                        tvCompletedLabel.text = "완료 일시"
+                        tvCompleted.text = formatDateTime(t.completedAt ?: t.startedAt)
+                    }
+                }
 
                 when (t.status) {
                     "completed" -> {

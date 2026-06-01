@@ -299,7 +299,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="24dp"
-                    android:enabled="false"
+                    android:enabled="true"
                     android:textColor="#333333"
                     android:text="위치정보서비스 이용동의 (필수)" />
 
@@ -326,7 +326,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="24dp"
-                    android:enabled="false"
+                    android:enabled="true"
                     android:textColor="#333333"
                     android:text="개인정보 수집·이용 동의 (필수)" />
 
@@ -353,7 +353,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    android:enabled="false"
+                    android:enabled="true"
                     android:textColor="#333333"
                     android:text="마케팅 정보 수신 동의 (선택)" />
 
@@ -373,7 +373,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="10dp"
-            android:enabled="false"
+            android:enabled="true"
             android:text="약관 모두 동의"
             android:textColor="#000000"
             android:textSize="16sp"

@@ -151,9 +151,13 @@ class MainActivity : BaseActivity(),
     private var restStopCountDown: CountDownTimer? = null
     private val visitedRestStopKeys = mutableSetOf<String>()
     private val REST_STOP_RADIUS_M = 150f
+    private val REST_STOP_EXIT_RADIUS_M = 200f   // 이 반경 벗어나면 휴식 강제 취소
     private val REST_STOP_DURATION_MS = 15 * 60 * 1000L
     private val REST_STOP_DEMO_DURATION_MS = 10 * 1000L
-    private var autoCompleteTriggered = false  // 최종 목적지 자동 완료 중복 방지
+    private var activeRestStopLat: Double = 0.0   // 현재 휴식 중인 휴게소 좌표
+    private var activeRestStopLng: Double = 0.0
+    private var autoCompleteTriggered = false        // 최종 목적지 자동 완료 중복 방지
+    private var suppressCompleteSoundOnce = false    // 자동 완료 시 processTripsUpdate 중복 음향 방지
 
     // ─── 휴게소 오버레이 일시 숨김 관련 ───────────────────────────────────────
     private val restOverlayHandler = Handler(Looper.getMainLooper())
@@ -466,10 +470,12 @@ class MainActivity : BaseActivity(),
         }
     }
 
-    private fun showRestStopOverlay(stopName: String) {
+    private fun showRestStopOverlay(stopName: String, stopLat: Double = 0.0, stopLng: Double = 0.0) {
         if (isRestStopActive) return
         isRestStopActive = true
         isOverlayTemporarilyHidden = false
+        activeRestStopLat = stopLat
+        activeRestStopLng = stopLng
         val isDemoMode = DeveloperModeManager.isEnabled(this)
         val durationMs = if (isDemoMode) REST_STOP_DEMO_DURATION_MS else REST_STOP_DURATION_MS
         val warnThresholdSec = if (isDemoMode) 5L else 60L
@@ -543,11 +549,23 @@ class MainActivity : BaseActivity(),
     private fun hideRestStopOverlay() {
         isRestStopActive = false; restStopCountDown?.cancel(); restStopCountDown = null
         isOverlayTemporarilyHidden = false
+        activeRestStopLat = 0.0; activeRestStopLng = 0.0
         restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
         binding.tvRestTimer.setTextColor(Color.parseColor("#4CAF50"))
         binding.restStopOverlay.animate().alpha(0f).setDuration(600).withEndAction { binding.restStopOverlay.visibility = View.GONE }.start()
         Toast.makeText(this, "✅ 휴식이 완료되었습니다. 안전 운행하세요! 🚛", Toast.LENGTH_LONG).show()
         Log.d("RestStop", "✅ 휴식 완료 — 네비 복구")
+    }
+
+    /** 휴식 중 휴게소 이탈 시 강제 취소 (음향 재생은 호출자가 이미 실행) */
+    private fun forceCancelRestStop() {
+        isRestStopActive = false; restStopCountDown?.cancel(); restStopCountDown = null
+        isOverlayTemporarilyHidden = false
+        activeRestStopLat = 0.0; activeRestStopLng = 0.0
+        restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
+        binding.tvRestTimer.setTextColor(Color.parseColor("#4CAF50"))
+        binding.restStopOverlay.animate().alpha(0f).setDuration(300).withEndAction { binding.restStopOverlay.visibility = View.GONE }.start()
+        Log.w("RestStop", "⚠️ 휴식 강제 취소 완료")
     }
 
     private fun checkProximityToStops(currentLat: Double, currentLng: Double) {
@@ -562,13 +580,29 @@ class MainActivity : BaseActivity(),
                 if (dist[0] <= REST_STOP_RADIUS_M) {
                     visitedRestStopKeys.add(key)
                     Log.d("RestStop", "📍 휴게소 감지: ${stop.name} (${dist[0].toInt()}m)")
-                    runOnUiThread { showRestStopOverlay(stop.name) }
+                    runOnUiThread { showRestStopOverlay(stop.name, stop.lat, stop.lng) }
                     return
                 }
             }
+        } else {
+            // ── 1-b. 휴식 중 이탈 감지: 200m 초과 → 경고음 + 취소 ───────────────
+            if (activeRestStopLat != 0.0 && activeRestStopLng != 0.0) {
+                val exitDist = FloatArray(1)
+                android.location.Location.distanceBetween(currentLat, currentLng, activeRestStopLat, activeRestStopLng, exitDist)
+                if (exitDist[0] > REST_STOP_EXIT_RADIUS_M) {
+                    Log.w("RestStop", "⚠️ 휴게소 이탈 감지: ${exitDist[0].toInt()}m > ${REST_STOP_EXIT_RADIUS_M.toInt()}m → 경고 재생 후 취소")
+                    runOnUiThread {
+                        playSequential(R.raw.warning, R.raw.rest_cancel)
+                        Toast.makeText(this@MainActivity, "⚠️ 휴게소를 벗어났습니다. 휴식이 취소되었습니다.", Toast.LENGTH_LONG).show()
+                        forceCancelRestStop()
+                    }
+                    return
+                }
+            }
+            // 휴게소 오버레이 중에는 다른 버튼 숨김
+            runOnUiThread { binding.btnCompleteTrip.visibility = View.GONE }
+            return
         }
-        // 휴게소 오버레이 중에는 다른 버튼 숨김
-        if (isRestStopActive) { runOnUiThread { binding.btnCompleteTrip.visibility = View.GONE }; return }
 
         // ── 2. 최종 목적지 100m 이내 → 자동 운행 완료 ─────────────────────
         if (!autoCompleteTriggered && currentNaviTripId != null) {
@@ -579,9 +613,11 @@ class MainActivity : BaseActivity(),
                 android.location.Location.distanceBetween(currentLat, currentLng, destStop.lat, destStop.lng, distDest)
                 if (distDest[0] <= 100f) {
                     autoCompleteTriggered = true
+                    suppressCompleteSoundOnce = true  // processTripsUpdate 에서 중복 재생 차단
                     Log.d("AutoComplete", "🏁 최종 목적지 100m 이내 도달 (${distDest[0].toInt()}m) → 자동 운행 완료")
                     val tripId = currentNaviTripId!!
                     runOnUiThread {
+                        playSequential(R.raw.bell, R.raw.trip_complite)
                         Toast.makeText(this@MainActivity, "🏁 목적지 도착! 운행을 완료합니다.", Toast.LENGTH_LONG).show()
                         binding.btnCompleteTrip.visibility = View.GONE
                     }
@@ -657,20 +693,46 @@ class MainActivity : BaseActivity(),
     @SuppressLint("MissingPermission")
     private fun showReplanDialog(tripId: String, message: String, wps: JSONArray) {
         if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this)
+
+        // ── 알림음: bell → trip_addwaypoint ───────────────────────────────────
+        playSequential(R.raw.bell, R.raw.trip_addwaypoint)
+
+        // ── 위치 기반 재경로 실행 헬퍼 ────────────────────────────────
+        val doReplan: (Double, Double) -> Unit = { lat, lng ->
+            if (lat != 0.0 && lng != 0.0) requestReplan(tripId, lat, lng, wps)
+            else Toast.makeText(this, "현재 위치를 확인할 수 없습니다.", Toast.LENGTH_SHORT).show()
+        }
+        val executeReplan = {
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { loc -> doReplan(loc?.latitude ?: lastLat, loc?.longitude ?: lastLng) }
+                .addOnFailureListener { doReplan(lastLat, lastLng) }
+        }
+
+        val dialog = AlertDialog.Builder(this)
             .setTitle(getString(R.string.navi_replan_title))
             .setMessage(message)
-            .setPositiveButton(getString(R.string.navi_replan_confirm)) { _, _ ->
-                fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
-                    val lat = loc?.latitude ?: lastLat; val lng = loc?.longitude ?: lastLng
-                    if (lat != 0.0 && lng != 0.0) requestReplan(tripId, lat, lng, wps)
-                    else Toast.makeText(this, "현재 위치를 확인할 수 없습니다.", Toast.LENGTH_SHORT).show()
-                }.addOnFailureListener {
-                    if (lastLat != 0.0 && lastLng != 0.0) requestReplan(tripId, lastLat, lastLng, wps)
-                    else Toast.makeText(this, "현재 위치를 확인할 수 없습니다.", Toast.LENGTH_SHORT).show()
-                }
-            }.setCancelable(false).show()
-        Log.d("LocationWS", "🚨 팝업 표시 완료")
+            .setPositiveButton("${getString(R.string.navi_replan_confirm)} (5)", null)
+            .setCancelable(false)
+            .create()
+        dialog.show()
+
+        val confirmBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        confirmBtn.setOnClickListener { dialog.dismiss(); executeReplan() }
+
+        // ── 5초 카운트다운 후 자동 실행 ──────────────────────────────
+        val autoTimer = object : CountDownTimer(5_000L, 1_000L) {
+            override fun onTick(millisUntilFinished: Long) {
+                val s = (millisUntilFinished / 1000L + 1).toInt()
+                if (dialog.isShowing) confirmBtn.text = "${getString(R.string.navi_replan_confirm)} ($s)"
+            }
+            override fun onFinish() {
+                if (!dialog.isShowing || isFinishing || isDestroyed) return
+                dialog.dismiss(); executeReplan()
+            }
+        }
+        autoTimer.start()
+        dialog.setOnDismissListener { autoTimer.cancel() }
+        Log.d("LocationWS", "🚨 팝업 표시 완료 — 5초 자동 확인 + bell→trip_addwaypoint 재생")
     }
 
     private fun scheduleWsReconnect() {
@@ -752,9 +814,15 @@ class MainActivity : BaseActivity(),
             if (id.isNotEmpty()) newStatuses[id] = st
         }
         if (!isFirstFetch) {
-            for ((id, status) in newStatuses) if (id !in knownTripStatuses && status in listOf("scheduled", "in_progress")) { playSequential(R.raw.bell, R.raw.trip_new); vibrate(200); break }
+            // 신규 trip: knownTripStatuses에 없던 ID가 scheduled 상태로 처음 등장한 경우만
+            // (in_progress는 replan 직후 fetchTrips에서 중복 재생되므로 제외)
+            for ((id, status) in newStatuses)
+                if (id !in knownTripStatuses && status == "scheduled") { playSequential(R.raw.bell, R.raw.trip_new); vibrate(200); break }
             for ((id, oldSt) in knownTripStatuses) if (oldSt !in listOf("cancelled","completed") && newStatuses[id] == "cancelled") { playSequential(R.raw.bell, R.raw.trip_cancel); vibrate(200) }
-            for ((id, oldSt) in knownTripStatuses) if (oldSt !in listOf("cancelled","completed") && newStatuses[id] == "completed") { playSequential(R.raw.bell, R.raw.trip_complite); vibrate(200) }
+            for ((id, oldSt) in knownTripStatuses) if (oldSt !in listOf("cancelled","completed") && newStatuses[id] == "completed") {
+                if (suppressCompleteSoundOnce) { suppressCompleteSoundOnce = false }
+                else { playSequential(R.raw.bell, R.raw.trip_complite); vibrate(200) }
+            }
         }
         if (acceptedTripId != null && newStatuses[acceptedTripId] != "scheduled") { acceptedTripId = null; acceptedOriginLat = 0.0; acceptedOriginLon = 0.0; acceptedOriginName = "현재 위치" }
         knownTripStatuses.clear(); knownTripStatuses.putAll(newStatuses)

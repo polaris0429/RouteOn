@@ -22,7 +22,6 @@ import android.text.style.StyleSpan
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewTreeObserver
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.CompoundButton
@@ -402,14 +401,12 @@ class RegisterActivity : AppCompatActivity() {
         """.trimIndent()
 
         fun checkAllTermsScrolled() {
-            if (cbAgreeLocation.isEnabled && cbAgreePrivacy.isEnabled && cbAgreeMarketing.isEnabled) {
-                cbAgreeAll.isEnabled = true
-            }
+            // 스크롤 없이 체크 가능 — 사용하지 않지만 호환성을 위해 유지
         }
 
-        setupTermScrollBehavior(svTermsLocation, cbAgreeLocation) { checkAllTermsScrolled() }
-        setupTermScrollBehavior(svTermsPrivacy, cbAgreePrivacy) { checkAllTermsScrolled() }
-        setupTermScrollBehavior(svTermsMarketing, cbAgreeMarketing) { checkAllTermsScrolled() }
+        setupTermScrollBehavior(svTermsLocation)
+        setupTermScrollBehavior(svTermsPrivacy)
+        setupTermScrollBehavior(svTermsMarketing)
 
         // 화면 밖 스크롤뷰(ScrollView)가 NestedScrollView의 스크롤을 가로채는 현상 방지
         svTermsMain.setOnTouchListener { _, _ -> false }
@@ -425,9 +422,9 @@ class RegisterActivity : AppCompatActivity() {
             cbAgreeAll.isChecked = isLocChecked && isPrivChecked && isMarkChecked
 
             cbAgreeAll.setOnCheckedChangeListener { _, isChecked ->
-                if (cbAgreeLocation.isEnabled) cbAgreeLocation.isChecked = isChecked
-                if (cbAgreePrivacy.isEnabled) cbAgreePrivacy.isChecked = isChecked
-                if (cbAgreeMarketing.isEnabled) cbAgreeMarketing.isChecked = isChecked
+                cbAgreeLocation.isChecked = isChecked
+                cbAgreePrivacy.isChecked  = isChecked
+                cbAgreeMarketing.isChecked = isChecked
 
                 val nextEnabled = cbAgreeLocation.isChecked && cbAgreePrivacy.isChecked
                 btnNextStepTerms.isEnabled = nextEnabled
@@ -439,9 +436,9 @@ class RegisterActivity : AppCompatActivity() {
         }
 
         cbAgreeAll.setOnCheckedChangeListener { _, isChecked ->
-            if (cbAgreeLocation.isEnabled) cbAgreeLocation.isChecked = isChecked
-            if (cbAgreePrivacy.isEnabled) cbAgreePrivacy.isChecked = isChecked
-            if (cbAgreeMarketing.isEnabled) cbAgreeMarketing.isChecked = isChecked
+            cbAgreeLocation.isChecked = isChecked
+            cbAgreePrivacy.isChecked  = isChecked
+            cbAgreeMarketing.isChecked = isChecked
 
             val isNextEnabled = cbAgreeLocation.isChecked && cbAgreePrivacy.isChecked
             btnNextStepTerms.isEnabled = isNextEnabled
@@ -605,7 +602,8 @@ class RegisterActivity : AppCompatActivity() {
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun setupTermScrollBehavior(scrollView: NestedScrollView, checkBox: CheckBox, onScrollEnd: () -> Unit) {
+    private fun setupTermScrollBehavior(scrollView: NestedScrollView) {
+        // 터치 시 부모 스크롤뷰가 이벤트를 가로체는 현상 방지
         scrollView.setOnTouchListener { v, event ->
             v.parent.requestDisallowInterceptTouchEvent(true)
             if ((event.action and MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP) {
@@ -613,26 +611,6 @@ class RegisterActivity : AppCompatActivity() {
             }
             false
         }
-
-        scrollView.setOnScrollChangeListener(NestedScrollView.OnScrollChangeListener { v, _, _, _, _ ->
-            if (!v.canScrollVertically(1)) {
-                checkBox.isEnabled = true
-                onScrollEnd()
-            }
-        })
-
-        scrollView.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                if (scrollView.measuredHeight > 0) {
-                    scrollView.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                    val child = scrollView.getChildAt(0)
-                    if (child != null && child.measuredHeight <= scrollView.measuredHeight) {
-                        checkBox.isEnabled = true
-                        onScrollEnd()
-                    }
-                }
-            }
-        })
     }
 
     override fun onDestroy() {
