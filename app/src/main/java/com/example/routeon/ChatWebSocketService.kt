@@ -124,6 +124,7 @@ class ChatWebSocketService : Service() {
     }
 
     private fun handleEvent(raw: String) {
+        Log.d("ChatWsService", "📩 수신: $raw")
         try {
             val json = JSONObject(raw)
             val eventType = json.optString("type", "")

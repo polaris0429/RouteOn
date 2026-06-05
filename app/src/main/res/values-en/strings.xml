@@ -70,6 +70,11 @@
     <string name="navi_loading_count">Load %1$d</string>
     <string name="navi_unloading_count">Unload %1$d</string>
 
+    <!-- Dispatch card cargo info (backend v1.0.28: recipient_name / cargo_type / cargo_weight_ton) -->
+    <string name="navi_cargo_section_title">Cargo Info</string>
+    <string name="navi_cargo_ton">%1$s t</string>
+    <string name="navi_cargo_dest_fallback">Drop-off</string>
+
     <!-- MainActivity — UI -->
     <string name="main_trip_list_title">Dispatch List</string>
     <string name="main_help_text">Need help?</string>

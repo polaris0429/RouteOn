@@ -658,13 +658,14 @@ class MainActivity : BaseActivity(),
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         webSocket?.cancel(); webSocket = null
         val request = Request.Builder().url("${Constants.WS_URL}/ws/location?token=$token").build()
+        Log.d("LocationWS", "🔌 연결 시도: ${Constants.WS_URL}/ws/location")
         webSocket = wsHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("LocationWS", "✅ 위치 웹소켓 연결 성공"); isLocationWsReconnecting = false
             }
             @SuppressLint("MissingPermission")
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d("LocationWS", "📩 수신: $text")
+                logLong("LocationWS", "📩 수신: $text")
                 try {
                     val json = JSONObject(text)
                     val msgType = json.optString("type")
@@ -784,25 +785,47 @@ class MainActivity : BaseActivity(),
         }
     }
 
+    /** Logcat 은 한 줄 약 4000자에서 잘리므로 긴 문자열을 나눠서 출력 */
+    private fun logLong(tag: String, msg: String) {
+        val max = 3500
+        if (msg.length <= max) { Log.d(tag, msg); return }
+        var i = 0; var part = 1
+        while (i < msg.length) {
+            val end = minOf(i + max, msg.length)
+            Log.d(tag, "[분할 $part] ${msg.substring(i, end)}")
+            i = end; part++
+        }
+    }
+
     private fun fetchTrips() {
-        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
+        val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null)
+        if (token == null) { Log.w("FetchTrips", "⚠️ access_token 없음 — 로그인 필요") ; return }
+        val userId = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("user_id", null)
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/trips").openConnection() as HttpURLConnection
+                val url = "${Constants.BASE_URL}/trips"
+                Log.d("FetchTrips", "📡 GET $url (내 user_id=$userId)")
+                val conn = URL(url).openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"; conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.connectTimeout = 8000; conn.readTimeout = 8000
                 val code = conn.responseCode
-                Log.d("FetchTrips", "📡 GET /trips → HTTP $code")
+                Log.d("FetchTrips", "📥 응답 코드: HTTP $code")
                 when (code) {
                     200 -> {
                         val body = conn.inputStream.bufferedReader().readText()
-                        Log.d("FetchTrips", "✅ 응답 (${body.length}자): ${body.take(200)}")
+                        Log.d("FetchTrips", "✅ 응답 길이: ${body.length}자 — 전체 본문 ↓↓↓")
+                        logLong("FetchTrips", body)
                         withContext(Dispatchers.Main) { processTripsUpdate(JSONArray(body)) }
                     }
-                    401 -> withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, "세션이 만료되었습니다. 다시 로그인해 주세요.", Toast.LENGTH_LONG).show() }
-                    else -> Log.e("FetchTrips", "❌ HTTP $code")
+                    else -> {
+                        val err = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                        Log.e("FetchTrips", "❌ HTTP $code — 오류 본문: ${err ?: "(없음)"}")
+                        if (code == 401) withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "세션이 만료되었습니다. 다시 로그인해 주세요.", Toast.LENGTH_LONG).show()
+                        }
+                    }
                 }
-            } catch (e: Exception) { Log.e("FetchTrips", "💥 ${e::class.simpleName}: ${e.message}") }
+            } catch (e: Exception) { Log.e("FetchTrips", "💥 ${e::class.simpleName}: ${e.message}", e) }
         }
     }
 
@@ -812,6 +835,16 @@ class MainActivity : BaseActivity(),
             val obj = jsonArray.getJSONObject(i)
             val id = obj.optString("id", ""); val st = obj.optString("status", "")
             if (id.isNotEmpty()) newStatuses[id] = st
+        }
+        // ── 수신한 배차 요약 로그 (배차 미표시 원인 추적용) ──────────────────
+        Log.d("TripsUpdate", "📦 수신한 trip 총 ${jsonArray.length()}건")
+        for (i in 0 until jsonArray.length()) {
+            val o = jsonArray.getJSONObject(i)
+            Log.d("TripsUpdate",
+                "  • id=${o.optString("id")} status=${o.optString("status")} " +
+                "driver_id=${o.optString("driver_id")} dest=${o.optString("dest_name")} " +
+                "loading=${o.optInt("loading_count", -1)} unloading=${o.optInt("unloading_count", -1)} " +
+                "waypoints=${o.optJSONArray("waypoints")?.length() ?: 0}")
         }
         if (!isFirstFetch) {
             // 신규 trip: knownTripStatuses에 없던 ID가 scheduled 상태로 처음 등장한 경우만
@@ -842,6 +875,92 @@ class MainActivity : BaseActivity(),
         }
     }
 
+    /** JSON null / 빈 문자열 정규화 (org.json 은 명시적 null 을 "null" 문자열로 반환할 수 있음) */
+    private fun cleanField(raw: String?): String =
+        raw?.let { if (it == "null" || it.isBlank()) "" else it.trim() } ?: ""
+
+    /** 톤수 표기: 정수면 소수점 제거, 아니면 소수 1자리 */
+    private fun formatTon(ton: Double): String =
+        if (ton % 1.0 == 0.0) ton.toInt().toString() else String.format(Locale.US, "%.1f", ton)
+
+    /**
+     * 배차카드 화물 정보 섹션 생성 (백엔드 v1.0.28).
+     * 하차(unloading) waypoint 의 recipient_name(화주·고객) / cargo_type(물건정보) / cargo_weight_ton(톤수)
+     * 중 하나라도 값이 있는 하차지를 모아 카드 안에 표시한다. 정보가 전혀 없으면 null 반환(섹션 미표시).
+     */
+    private fun buildCargoInfoSection(waypointsArr: JSONArray?): LinearLayout? {
+        if (waypointsArr == null || waypointsArr.length() == 0) return null
+        val names = mutableListOf<String>()
+        val infos = mutableListOf<String>()
+        for (i in 0 until waypointsArr.length()) {
+            val wp = waypointsArr.getJSONObject(i)
+            // waypoints 배열은 type(loading/unloading), optimized_route.route 는 node_type 을 사용
+            val nodeType = wp.optString("node_type", "")
+            val t        = wp.optString("type", "unloading")
+            val isUnloading = if (nodeType.isNotEmpty()) nodeType == "unloading"
+                              else (t == "unloading" || t == "destination")
+            if (!isUnloading) continue
+            val recipient = cleanField(wp.optString("recipient_name", ""))
+            val cargo     = cleanField(wp.optString("cargo_type", ""))
+            val ton       = wp.optDouble("cargo_weight_ton", 0.0)
+            if (recipient.isEmpty() && cargo.isEmpty() && ton <= 0.0) continue
+            val name = cleanField(wp.optString("name", "")).ifEmpty { getString(R.string.navi_cargo_dest_fallback) }
+            val parts = mutableListOf<String>()
+            if (recipient.isNotEmpty()) parts.add("\uD83D\uDC64 $recipient")            // 👤 화주(고객)
+            if (cargo.isNotEmpty())     parts.add("\uD83D\uDCE6 $cargo")                // 📦 물건정보
+            if (ton > 0.0)              parts.add("\u2696\uFE0F " + getString(R.string.navi_cargo_ton, formatTon(ton)))  // ⚖️ 톤수
+            names.add(name); infos.add(parts.joinToString("   "))
+        }
+        if (names.isEmpty()) return null
+
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(if (isNightMode) Color.parseColor("#161622") else Color.parseColor("#F5F7FA"))
+                cornerRadius = dpToPx(10).toFloat()
+            }
+            setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dpToPx(12) }
+        }
+        section.addView(TextView(this).apply {
+            text = "\uD83D\uDCCB " + getString(R.string.navi_cargo_section_title)   // 📋 화물 정보
+            textSize = 12f; setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(if (isNightMode) "#AAB4C0" else "#607D8B"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dpToPx(6) }
+        })
+        for (idx in names.indices) {
+            val rowBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { if (idx > 0) topMargin = dpToPx(8) }
+            }
+            // 여러 하차지가 있을 때만 하차지 이름을 머리글로 표시
+            if (names.size > 1) {
+                rowBox.addView(TextView(this).apply {
+                    text = "\uD83D\uDCCD ${names[idx]}"   // 📍 하차지명
+                    textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(if (isNightMode) Color.parseColor("#E0E0E0") else Color.parseColor("#263238"))
+                    maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+            }
+            rowBox.addView(TextView(this).apply {
+                text = infos[idx]
+                textSize = 13f
+                setTextColor(if (isNightMode) Color.parseColor("#C2CAD2") else Color.parseColor("#455A64"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { if (names.size > 1) topMargin = dpToPx(2) }
+            })
+            section.addView(rowBox)
+        }
+        return section
+    }
+
     @SuppressLint("SetTextI18n", "MissingPermission")
     private fun renderRunList(jsonArray: JSONArray) {
         val focused = currentFocus
@@ -857,6 +976,7 @@ class MainActivity : BaseActivity(),
             val obj = jsonArray.getJSONObject(i); val st = obj.optString("status", "")
             if (st != "cancelled" && st != "completed") activeItems.add(obj)
         }
+        Log.d("RenderRunList", "🧾 전체 ${jsonArray.length()}건 중 표시 대상(scheduled/in_progress 등) ${activeItems.size}건 — cancelled/completed 는 숨김")
         if (activeItems.isEmpty()) {
             container.addView(TextView(this).apply {
                 text = getString(R.string.navi_no_trips); setPadding(dpToPx(16), dpToPx(32), dpToPx(16), dpToPx(32))
@@ -940,6 +1060,9 @@ class MainActivity : BaseActivity(),
                 if (unloadingCount > 0) chipRow.addView(makeChip("📦 ${getString(R.string.navi_unloading_count, unloadingCount)}", "#0277BD", if (isNightMode) "#00233E" else "#E1F5FE").apply { (layoutParams as LinearLayout.LayoutParams).marginStart = dpToPx(6) })
                 card.addView(chipRow)
             }
+            // ── 화물 정보 섹션 (화주·물건정보·톤수) — 정보가 있을 때만 표시 ──────────
+            // waypoints 우선, 없으면 optimized_route.route(운행 중) 노드에서 회수
+            (buildCargoInfoSection(waypointsArr) ?: buildCargoInfoSection(routeArr))?.let { card.addView(it) }
             card.addView(View(this).apply {
                 setBackgroundColor(if (isNightMode) Color.parseColor("#2E2E3A") else Color.parseColor("#F0F0F0"))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(1)).apply { topMargin = dpToPx(16); bottomMargin = dpToPx(14) }
@@ -1127,6 +1250,26 @@ class MainActivity : BaseActivity(),
                     ?: lastUnloading?.optString("name", "")?.takeIf { it.isNotEmpty() }
                     ?: displayName
 
+                // ── 미리보기 지도용 waypoints: 기존 경유지 + 도착지(dest_*)를 하차 핀으로 추가 ──
+                // /trips 응답은 도착지를 waypoints 가 아닌 dest_lat/lon 으로 내려주므로,
+                // 그대로 두면 지도에 하차 핀이 안 찍힌다. → dest 를 unloading 노드로 합쳐서 전달
+                val previewWaypoints = JSONArray()
+                wpList.forEach { previewWaypoints.put(it) }
+                if (rawDestLat != 0.0 && rawDestLon != 0.0) {
+                    val dup = (0 until previewWaypoints.length()).any {
+                        val w  = previewWaypoints.getJSONObject(it)
+                        val wl = w.optDouble("lat", 0.0)
+                        val wo = w.optDouble("lon", w.optDouble("lng", 0.0))
+                        Math.abs(wl - rawDestLat) < 1e-6 && Math.abs(wo - rawDestLon) < 1e-6
+                    }
+                    if (!dup) previewWaypoints.put(JSONObject().apply {
+                        put("name", rawDestName.ifEmpty { destAddr })
+                        put("lat",  rawDestLat)
+                        put("lon",  rawDestLon)
+                        put("type", "unloading")
+                    })
+                }
+
                 card.isClickable = true
                 card.isFocusable = true
                 card.setOnClickListener {
@@ -1136,7 +1279,7 @@ class MainActivity : BaseActivity(),
                             putExtra("trip_name",      displayName)
                             putExtra("distance_km",    previewDistKm.toFloat())
                             putExtra("duration_min",   previewDurMin.toFloat())
-                            putExtra("waypoints_json", waypointsArr?.toString() ?: "[]")
+                            putExtra("waypoints_json", previewWaypoints.toString())
                             putExtra("pickup_name",    pickupAddr)
                             putExtra("dest_name",      destAddr)
                             putExtra("status",         status)

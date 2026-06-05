@@ -14,6 +14,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.animation.AnimationUtils
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -74,6 +75,34 @@ abstract class BaseActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // [데모/발표용] 화면 공유 시 검은 화면 방지 — 모든 화면에서 보안 플래그 해제
+        disableSecureForScreenShare()
+    }
+
+    /**
+     * [데모/발표용] 화면 공유·녹화 시 "보안을 위해 화면 공유에서 앱 콘텐츠가 숨겨집니다"
+     * 메시지와 함께 검은 화면으로 송출되는 것을 막는다.
+     * FLAG_SECURE 를 코드에서 직접 설정한 곳이 없으므로(외부 SDK/기기 정책 추정)
+     * 모든 화면에서 명시적으로 해제한다. 발표가 끝나면 이 기능을 제거하면 된다.
+     */
+    private fun disableSecureForScreenShare() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // onCreate 이후(라이프사이클 콜백 등)에 다시 설정되는 경우까지 대비해 한 프레임 뒤 재해제
+        window.decorView.post { window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // [진단] 윈도우에 FLAG_SECURE 가 실제로 붙어 있는지 해제 전/후로 확인
+            val before = (window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            val after = (window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
+            android.util.Log.d(
+                "SecureFlagDebug",
+                "${this::class.java.simpleName}: FLAG_SECURE before=$before after=$after"
+            )
+        }
     }
 
     override fun onStart() {
@@ -103,6 +132,8 @@ abstract class BaseActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // [데모/발표용] 화면 공유 검은 화면 방지
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         // 개발자 모드 FAB 동기화 (다른 화면에서 활성화 후 돌아온 경우)
         syncDevFab()
     }

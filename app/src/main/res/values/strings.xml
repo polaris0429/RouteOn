@@ -83,6 +83,11 @@
     <string name="navi_loading_count">상차 %1$d건</string>
     <string name="navi_unloading_count">하차 %1$d건</string>
 
+    <!-- 배차카드 화물 정보 (백엔드 v1.0.28: recipient_name / cargo_type / cargo_weight_ton) -->
+    <string name="navi_cargo_section_title">화물 정보</string>
+    <string name="navi_cargo_ton">%1$s톤</string>
+    <string name="navi_cargo_dest_fallback">하차지</string>
+
     <!-- ChatActivity -->
     <string name="chat_title">채팅 문의</string>
     <string name="chat_input_hint">메시지를 입력하세요</string>

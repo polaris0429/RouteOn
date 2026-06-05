@@ -119,11 +119,31 @@ class TripPreviewActivity : BaseActivity() {
         }
 
         val hasRealData = distKm > 0f
-        val computedDistKm = if (hasRealData) distKm.toDouble() else computeRouteDistance(waypoints)
-        val computedDurMin = when {
-            hasRealData -> durMin.toDouble()
-            computedDistKm > 0.0 -> computedDistKm * 1.35 / 40.0 * 60.0
-            else -> 0.0
+        val computedDistKm: Double
+        val computedDurMin: Double
+        if (hasRealData) {
+            // 서버 최적화 경로(optimized_route)의 실제 도로 거리/소요시간 그대로 사용
+            computedDistKm = distKm.toDouble()
+            computedDurMin = durMin.toDouble()
+        } else {
+            // 미최적화(예약) 배차: 직선거리 → 도로거리 추정(우회계수 1.3)
+            // + 거리 구간별 평균속도로 소요시간 추정 (고정 40km/h 는 장거리를 과대평가)
+            val straightKm = computeRouteDistance(waypoints)
+            if (straightKm > 0.0) {
+                val roadKm = straightKm * 1.3
+                val avgKmh = when {
+                    roadKm <= 10  -> 25.0   // 시내 단거리
+                    roadKm <= 30  -> 40.0
+                    roadKm <= 80  -> 60.0
+                    roadKm <= 200 -> 75.0
+                    else          -> 85.0   // 장거리 고속도로 위주
+                }
+                computedDistKm = roadKm
+                computedDurMin = roadKm / avgKmh * 60.0
+            } else {
+                computedDistKm = 0.0
+                computedDurMin = 0.0
+            }
         }
 
         if (computedDistKm > 0) {
@@ -156,16 +176,26 @@ class TripPreviewActivity : BaseActivity() {
             btnAccept.visibility = View.GONE
         }
 
+        // ── 화물 정보 섹션 삽입 (수락 버튼 위) — 정보가 있을 때만 ──────────
+        buildCargoSection(unloadingPts)?.let { section ->
+            val insertIdx = cardContent.indexOfChild(btnAccept).let { if (it < 0) cardContent.childCount else it }
+            cardContent.addView(section, insertIdx)
+        }
+
         setupWebView()
 
         // ── 현재 위치 취득 후 지도 로드 ─────────────────────────────────────────
         loadingOverlay.visibility = View.VISIBLE
         val currentLoc = getLastLocation()
-        webViewMap.loadDataWithBaseURL(
-            MAP_BASE_URL,
-            buildMapHtml(waypointsJson, isNightModeNow, currentLoc),
-            "text/html", "UTF-8", null
-        )
+        // WebView 가 레이아웃되기 전에 loadData 가 실행되면(특히 재진입 시 캐시로 빨리 뜰 때)
+        // 카카오 지도가 0 크기로 초기화돼 빈 화면이 된다. → post{} 로 레이아웃 후 로드 + JS 에서 relayout
+        webViewMap.post {
+            webViewMap.loadDataWithBaseURL(
+                MAP_BASE_URL,
+                buildMapHtml(waypointsJson, isNightModeNow, currentLoc),
+                "text/html", "UTF-8", null
+            )
+        }
         Handler(Looper.getMainLooper()).postDelayed(
             { loadingOverlay.visibility = View.GONE }, 2000L
         )
@@ -196,6 +226,83 @@ class TripPreviewActivity : BaseActivity() {
     }
 
     private fun dpToPx(dp: Int) = (dp * resources.displayMetrics.density + 0.5f).toInt()
+
+    /** JSON null / 빈 문자열 정규화 */
+    private fun cleanField(raw: String?): String =
+        raw?.let { if (it == "null" || it.isBlank()) "" else it.trim() } ?: ""
+
+    /**
+     * 미리보기 카드 화물 정보 섹션 (백엔드 v1.0.28).
+     * 하차지 waypoint 의 recipient_name(화주·고객) / cargo_type(물건정보) / cargo_weight_ton(톤수) 표시.
+     * 정보가 전혀 없으면 null 반환(섹션 미표시).
+     */
+    private fun buildCargoSection(unloadingPts: List<JSONObject>): View? {
+        val names = mutableListOf<String>()
+        val infos = mutableListOf<String>()
+        for (wp in unloadingPts) {
+            val recipient = cleanField(wp.optString("recipient_name", ""))
+            val cargo     = cleanField(wp.optString("cargo_type", ""))
+            val ton       = wp.optDouble("cargo_weight_ton", 0.0)
+            if (recipient.isEmpty() && cargo.isEmpty() && ton <= 0.0) continue
+            val name = cleanField(wp.optString("name", "")).ifEmpty { getString(R.string.navi_cargo_dest_fallback) }
+            val parts = mutableListOf<String>()
+            if (recipient.isNotEmpty()) parts.add("\uD83D\uDC64 $recipient")
+            if (cargo.isNotEmpty())     parts.add("\uD83D\uDCE6 $cargo")
+            if (ton > 0.0) {
+                val tonStr = if (ton % 1.0 == 0.0) ton.toInt().toString() else String.format("%.1f", ton)
+                parts.add("\u2696\uFE0F " + getString(R.string.navi_cargo_ton, tonStr))
+            }
+            names.add(name); infos.add(parts.joinToString("   "))
+        }
+        if (names.isEmpty()) return null
+
+        val dark = isNightModeNow
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(if (dark) Color.parseColor("#161622") else Color.parseColor("#F5F7FA"))
+                cornerRadius = dpToPx(10).toFloat()
+            }
+            setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dpToPx(2); bottomMargin = dpToPx(12) }
+        }
+        section.addView(TextView(this).apply {
+            text = "\uD83D\uDCCB " + getString(R.string.navi_cargo_section_title)
+            textSize = 12f; setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor(if (dark) "#AAB4C0" else "#607D8B"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dpToPx(6) }
+        })
+        for (idx in names.indices) {
+            val rowBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { if (idx > 0) topMargin = dpToPx(8) }
+            }
+            if (names.size > 1) {
+                rowBox.addView(TextView(this).apply {
+                    text = "\uD83D\uDCCD ${names[idx]}"
+                    textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(if (dark) Color.parseColor("#E0E0E0") else Color.parseColor("#263238"))
+                    maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+            }
+            rowBox.addView(TextView(this).apply {
+                text = infos[idx]
+                textSize = 13f
+                setTextColor(if (dark) Color.parseColor("#C2CAD2") else Color.parseColor("#455A64"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { if (names.size > 1) topMargin = dpToPx(2) }
+            })
+            section.addView(rowBox)
+        }
+        return section
+    }
 
     // ── GPS 마지막 위치 취득 (LocationManager) ───────────────────────────────
     @SuppressLint("MissingPermission")
@@ -335,9 +442,14 @@ class TripPreviewActivity : BaseActivity() {
             append("  }\n")
             append("}\n")
 
-            append("if(allPos.length>=2){ map.setBounds(bounds,80,60,260,60); }\n")
-            append("else if(allPos.length===1){ map.setCenter(allPos[0]); map.setLevel(5); }\n")
-            append("else if(CUR_LAT&&CUR_LON){ map.setCenter(new kakao.maps.LatLng(CUR_LAT,CUR_LON)); map.setLevel(6); }\n")
+            append("function _fit(){\n")
+            append("  map.relayout();\n")
+            append("  if(allPos.length>=2){ map.setBounds(bounds,80,60,260,60); }\n")
+            append("  else if(allPos.length===1){ map.setCenter(allPos[0]); map.setLevel(5); }\n")
+            append("  else if(CUR_LAT&&CUR_LON){ map.setCenter(new kakao.maps.LatLng(CUR_LAT,CUR_LON)); map.setLevel(6); }\n")
+            append("}\n")
+            // 재진입 시 빈 지도 방지: relayout 으로 크기 재측정 후 재프레이밍 (즉시 + 지연)
+            append("_fit(); setTimeout(_fit,300); setTimeout(_fit,800);\n")
 
             // ── Switch 컨트롤 제거 로직 (호환성 높은 일반 for 루프로 복구)
             append("function _rm(){\n")

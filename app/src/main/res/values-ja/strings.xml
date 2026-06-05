@@ -70,6 +70,11 @@
     <string name="navi_loading_count">積込 %1$d件</string>
     <string name="navi_unloading_count">降ろし %1$d件</string>
 
+    <!-- 配車カード貨物情報 (バックエンド v1.0.28: recipient_name / cargo_type / cargo_weight_ton) -->
+    <string name="navi_cargo_section_title">貨物情報</string>
+    <string name="navi_cargo_ton">%1$sトン</string>
+    <string name="navi_cargo_dest_fallback">荷降ろし地</string>
+
     <!-- MainActivity — UI -->
     <string name="main_trip_list_title">配車リスト</string>
     <string name="main_help_text">お困りですか？</string>

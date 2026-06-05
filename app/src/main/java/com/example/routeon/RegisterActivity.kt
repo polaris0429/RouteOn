@@ -22,6 +22,7 @@ import android.text.style.StyleSpan
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.CompoundButton
@@ -88,6 +89,10 @@ class RegisterActivity : AppCompatActivity() {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_register)
+
+        // [데모/발표용] 화면 공유 시 검은 화면(FLAG_SECURE) 방지
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        window.decorView.post { window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 101)
@@ -493,7 +498,7 @@ class RegisterActivity : AppCompatActivity() {
 
                     val messageObj = JSONObject().apply {
                         put("to", phone)
-                        put("from", "01081972581")
+                        put("from", "01062595741")
                         put("text", "[RouteOn] 기사 가입 인증번호는 [$generatedCode] 입니다.")
                     }
                     val jsonParam = JSONObject().apply { put("message", messageObj) }
@@ -618,6 +623,12 @@ class RegisterActivity : AppCompatActivity() {
             }
             false
         }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // [데모/발표용] 포커스 획득 후 재설정되더라도 다시 해제
+        if (hasFocus) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     override fun onDestroy() {
