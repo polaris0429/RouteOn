@@ -52,6 +52,7 @@
     <string name="navi_cancel_confirm_title">Cancel Trip</string>
     <string name="navi_cancel_confirm_message">Are you sure you want to cancel?</string>
     <string name="navi_btn_start">Start</string>
+    <string name="navi_btn_reroute">Recalculate Route</string>
     <string name="navi_btn_cancel_trip">Cancel Trip</string>
     <string name="navi_btn_complete_dest">Complete Trip (Destination Arrived)</string>
     <string name="navi_btn_complete_delivery">Manual Delivery Complete</string>

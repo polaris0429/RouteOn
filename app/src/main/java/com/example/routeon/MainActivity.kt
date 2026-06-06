@@ -61,6 +61,7 @@ import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_RouteGuideDelegate
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_SafetyGuideDelegate
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuidance_VoiceGuideDelegate
 import com.kakaomobility.knsdk.guidance.knguidance.KNGuideRouteChangeReason
+import com.kakaomobility.knsdk.guidance.knguidance.KNGuideState
 import com.kakaomobility.knsdk.guidance.knguidance.citsguide.KNGuide_Cits
 import com.kakaomobility.knsdk.guidance.knguidance.common.KNLocation
 import com.kakaomobility.knsdk.guidance.knguidance.locationguide.KNGuide_Location
@@ -71,6 +72,7 @@ import com.kakaomobility.knsdk.guidance.knguidance.safetyguide.objects.KNSafety
 import com.kakaomobility.knsdk.guidance.knguidance.voiceguide.KNGuide_Voice
 import com.kakaomobility.knsdk.trip.kntrip.knroute.KNRoute
 import com.kakaomobility.knsdk.ui.view.KNNaviView
+import com.kakaomobility.knsdk.ui.view.KNNaviView_GuideStateDelegate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -99,6 +101,7 @@ class MainActivity : BaseActivity(),
     KNGuidance_GuideStateDelegate, KNGuidance_LocationGuideDelegate,
     KNGuidance_RouteGuideDelegate, KNGuidance_SafetyGuideDelegate,
     KNGuidance_VoiceGuideDelegate, KNGuidance_CitsGuideDelegate,
+    KNNaviView_GuideStateDelegate,
     SensorEventListener,
     BaseActivity.DevRestModeCallback,
     BaseActivity.DemoCallback {
@@ -194,6 +197,7 @@ class MainActivity : BaseActivity(),
     private var acceptedOriginLon: Double = 0.0
 
     private val expandedTripIds = mutableSetOf<String>()
+    private val startedTripIds  = mutableSetOf<String>()   // 한 번이라도 안내를 시작한 배차(→ + 버튼 숨김 + "경로 재계산")
     private val tripOriginText  = mutableMapOf<String, String>()
     private val tripDestText    = mutableMapOf<String, String>()
     private val tripOriginCoords = mutableMapOf<String, DoubleArray>()
@@ -857,6 +861,12 @@ class MainActivity : BaseActivity(),
                 else { playSequential(R.raw.bell, R.raw.trip_complite); vibrate(200) }
             }
         }
+        // ── 진행 중이던 배차가 취소되면(관리자·기사 취소 등) 내비게이션 자동 종료 ──
+        val navTripId = currentNaviTripId
+        if (navTripId != null && newStatuses[navTripId] == "cancelled") {
+            Log.d("Cancel", "🛑 진행 중 배차($navTripId) 취소 감지 → 내비게이션 자동 종료")
+            endNavigationToSafeMode(getString(R.string.navi_trip_cancelled))
+        }
         if (acceptedTripId != null && newStatuses[acceptedTripId] != "scheduled") { acceptedTripId = null; acceptedOriginLat = 0.0; acceptedOriginLon = 0.0; acceptedOriginName = "현재 위치" }
         knownTripStatuses.clear(); knownTripStatuses.putAll(newStatuses)
         isFirstFetch = false
@@ -1087,6 +1097,8 @@ class MainActivity : BaseActivity(),
                     setOnClickListener { acceptedTripId = tripId; fetchTrips() }
                 })
             } else {
+                // 한 번이라도 안내 시작 이후(서버 in_progress 또는 로컬 기록) → + 버튼 숨김 + "경로 재계산"
+                val hasStarted = status == "in_progress" || tripId in startedTripIds
                 val originCoords = tripOriginCoords.getOrPut(tripId) { doubleArrayOf(0.0, 0.0) }
                 val destCoords   = tripDestCoords.getOrPut(tripId)   { doubleArrayOf(0.0, 0.0) }
                 val originInputRow = LinearLayout(this).apply {
@@ -1187,10 +1199,26 @@ class MainActivity : BaseActivity(),
                 plusRow2.addView(plusBtn)
 
                 btnRow.addView(androidx.appcompat.widget.AppCompatButton(this).apply {
-                    text = getString(R.string.navi_btn_start); textSize = 14f; setTypeface(null, android.graphics.Typeface.BOLD); setTextColor(Color.WHITE)
-                    background = GradientDrawable().apply { setColor(Color.parseColor("#2E7D32")); cornerRadius = dpToPx(12).toFloat() }
+                    text = if (hasStarted) getString(R.string.navi_btn_reroute) else getString(R.string.navi_btn_start); textSize = 14f; setTypeface(null, android.graphics.Typeface.BOLD); setTextColor(Color.WHITE)
+                    background = GradientDrawable().apply { setColor(Color.parseColor(if (hasStarted) "#1565C0" else "#2E7D32")); cornerRadius = dpToPx(12).toFloat() }
                     stateListAnimator = null; elevation = 0f; layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(48))
                     setOnClickListener {
+                        if (hasStarted) {
+                            // ── 경로 재계산: 현재 위치 기준으로 /optimize 재요청 (출발지·목적지는 서버 자동 결정) ──
+                            startedTripIds.add(tripId)
+                            currentNaviTripId = tripId
+                            bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+                            fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+                                optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon,
+                                    loc?.latitude ?: lastLat.takeIf { it != 0.0 },
+                                    loc?.longitude ?: lastLng.takeIf { it != 0.0 })
+                            }.addOnFailureListener {
+                                optimizeAndStartNavi(tripId, displayName, rawDestLat, rawDestLon,
+                                    lastLat.takeIf { it != 0.0 }, lastLng.takeIf { it != 0.0 })
+                            }
+                            return@setOnClickListener
+                        }
+                        startedTripIds.add(tripId)
                         val originText = originField.text.toString().trim()
                         val destText   = destField.text.toString().trim()
                         // 기사가 검색으로 목적지 좌표까지 확정한 경우에만 userProvidedDest = true
@@ -1226,7 +1254,7 @@ class MainActivity : BaseActivity(),
                         }
                     }
                 })
-                card.addView(expandPanel); card.addView(plusRow2)
+                if (!hasStarted) { card.addView(expandPanel); card.addView(plusRow2) }
             }
             card.addView(btnRow)
 
@@ -1505,6 +1533,7 @@ class MainActivity : BaseActivity(),
 
     private fun applyNaviSettings() {
         if (!::naviView.isInitialized) return
+        naviView.guideStateDelegate = this   // 메뉴 '안내종료' / 안전운행 'X' → naviViewGuideEnded 콜백 수신
         val sp = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         naviView.useDarkMode = isNightMode
         naviView.fuelType = when (sp.getInt("fuel_type", 0)) {
@@ -1586,6 +1615,32 @@ class MainActivity : BaseActivity(),
             Toast.makeText(this@MainActivity, getString(R.string.navi_ended), Toast.LENGTH_SHORT).show()
             binding.naviContainer.removeAllViews(); naviView = KNNaviView(this@MainActivity); binding.naviContainer.addView(naviView)
             applyNaviSettings(); startSafeDriving()
+        }
+    }
+
+    /** 주행 화면 메뉴의 '안내종료' 또는 안전운행 모드의 'X' 클릭 시 호출 (KNNaviView_GuideStateDelegate). */
+    override fun naviViewGuideEnded() { endNavigationToSafeMode(getString(R.string.navi_ended)) }
+
+    /** 주행 화면 상태(KNGuideState) 변경 콜백 — 인터페이스 충족용, 별도 처리 없음 */
+    override fun naviViewGuideState(state: KNGuideState) { }
+
+    /** 진행 중인 길 안내를 중단하고 안전운행 모드로 복귀시킨다. (안내종료·배차 취소 등 공통 사용) */
+    private fun endNavigationToSafeMode(toastMsg: String?) {
+        KNSDK.sharedGuidance()?.stop()
+        if (demoPlayer.isPlaying) demoPlayer.stop()
+        currentNaviTripId = null; currentStops.clear()
+        autoCompleteTriggered = false; suppressCompleteSoundOnce = false
+        visitedRestStopKeys.clear()
+        if (isRestStopActive) forceCancelRestStop()
+        binding.naviContainer.post {
+            binding.btnCompleteTrip.visibility = View.GONE
+            binding.naviContainer.removeAllViews()
+            naviView = KNNaviView(this@MainActivity)
+            binding.naviContainer.addView(naviView)
+            applyNaviSettings(); startSafeDriving()
+            bottomSheetBehavior?.state = BottomSheetBehavior.STATE_EXPANDED
+            if (!toastMsg.isNullOrEmpty()) Toast.makeText(this@MainActivity, toastMsg, Toast.LENGTH_SHORT).show()
+            fetchTrips()
         }
     }
     override fun willPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) { if (::naviView.isInitialized) naviView.willPlayVoiceGuide(aGuidance, aVoiceGuide); vibrate(150) }

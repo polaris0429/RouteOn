@@ -65,6 +65,7 @@
     <string name="navi_cancel_confirm_title">운행 취소</string>
     <string name="navi_cancel_confirm_message">정말 취소하시겠습니까?</string>
     <string name="navi_btn_start">안내 시작</string>
+    <string name="navi_btn_reroute">경로 재계산</string>
     <string name="navi_btn_cancel_trip">운행 취소</string>
     <string name="navi_btn_complete_dest">운행 완료 (목적지 도착)</string>
     <string name="navi_btn_complete_delivery">📦 배송지 수동 완료</string>
