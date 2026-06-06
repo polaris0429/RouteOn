@@ -120,6 +120,6 @@
     <string name="help_direct_input_hint">キャンセル理由を入力してください</string>
     <string name="help_direct_input_empty_toast">理由を入力してください。</string>
     <string name="help_cancel_confirm_message">キャンセル理由: %1$s\n\n配車をキャンセルしますか？</string>
-    <string name="help_cancel_request_complete">キャンセルリクエストを受け付けました。</string>
+    <string name="help_cancel_request_complete">キャンセルリクエストを受け付けました。管理者の承認後に処理されます。</string>
 
 </resources>

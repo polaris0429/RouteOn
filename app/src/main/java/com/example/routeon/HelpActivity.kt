@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
+import android.util.Log
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
@@ -16,6 +17,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -32,7 +36,7 @@ class HelpActivity : BaseActivity() {
         setContentView(R.layout.activity_help)
         applySystemBarsColor()
 
-        // 배차 거절을 통해 진입한 경우 tripId 수신
+        // 배차 거절 버튼에서 Intent로 tripId 수신
         cancelTripId = intent.getStringExtra("cancel_trip_id")
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
@@ -62,30 +66,32 @@ class HelpActivity : BaseActivity() {
         ic.isAppearanceLightNavigationBars = !isNightMode
     }
 
+    // =========================================================================
+    // 취소 사유 선택 다이얼로그
+    // =========================================================================
+
     private fun showCancelReasonDialog() {
-        // getString()을 사용하여 xml에 정의된 값을 가져옵니다.
         val reasons = arrayOf(
             getString(R.string.cancel_reason_vehicle_issue),
             getString(R.string.cancel_reason_health_issue),
-            getString(R.string.cancel_reason_accident), // "사고 발생"도 리소스화 권장
-            getString(R.string.cancel_reason_other)       // "기타" 사유
+            getString(R.string.cancel_reason_accident),
+            getString(R.string.cancel_reason_other)
         )
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.cancel_reason_select) // setTitle에도 리소스 ID 직접 전달 가능
+            .setTitle(R.string.cancel_reason_select)
             .setItems(reasons) { _, which ->
                 when (which) {
-                    3 -> showDirectInputDialog()
-                    else -> confirmCancel(reasons[which])
+                    3 -> showDirectInputDialog()        // "기타" 선택 → 직접 입력
+                    else -> confirmCancelRequest(reasons[which])
                 }
             }
-            .setNegativeButton(R.string.close, null) // "닫기"도 다국어 대응
+            .setNegativeButton(R.string.close, null)
             .show()
     }
 
     private fun showDirectInputDialog() {
         val input = EditText(this).apply {
-            // hint는 String 타입이 필요하므로 getString 사용
             hint = getString(R.string.help_direct_input_hint)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             setPadding(48, 24, 48, 24)
@@ -97,9 +103,8 @@ class HelpActivity : BaseActivity() {
             .setPositiveButton(R.string.common_confirm) { _, _ ->
                 val reason = input.text.toString().trim()
                 if (reason.isNotEmpty()) {
-                    confirmCancel(reason)
+                    confirmCancelRequest(reason)
                 } else {
-                    // Toast도 리소스 ID를 직접 넣을 수 있습니다.
                     Toast.makeText(this, R.string.help_direct_input_empty_toast, Toast.LENGTH_SHORT).show()
                 }
             }
@@ -107,7 +112,14 @@ class HelpActivity : BaseActivity() {
             .show()
     }
 
-    private fun confirmCancel(reason: String) {
+    // =========================================================================
+    // 취소 요청 확인 → POST /trips/{id}/cancel-request {"reason":"..."}
+    //
+    // v1.0.76: 기사 앱은 즉시 취소(PATCH /status) 대신 취소 요청을 서버에 전송하고
+    // 관리자 승인을 기다린다. 승인 시 서버가 WS trip.cancelled 를 브로드캐스트한다.
+    // =========================================================================
+
+    private fun confirmCancelRequest(reason: String) {
         AlertDialog.Builder(this)
             .setTitle(R.string.dispatch_cancel)
             .setMessage(getString(R.string.help_cancel_confirm_message, reason))
@@ -121,85 +133,151 @@ class HelpActivity : BaseActivity() {
                 }
 
                 if (!cancelTripId.isNullOrEmpty()) {
-                    // 배차 거절 버튼에서 Intent로 받은 tripId로 바로 취소
-                    executeCancelTrip(token, cancelTripId!!)
+                    // 배차 거절 버튼에서 Intent로 받은 tripId → 즉시 cancel-request 전송
+                    sendCancelRequest(token, cancelTripId!!, reason)
                 } else {
-                    // 일반 도움말 진입: 서버에서 현재 활성 운행 조회 후 취소
-                    fetchActiveTripAndCancel(token)
+                    // 일반 도움말 진입: 현재 활성 운행 조회 후 cancel-request 전송
+                    fetchActiveTripAndSendRequest(token, reason)
                 }
             }
             .setNegativeButton(R.string.common_no, null)
             .show()
     }
 
-    private fun executeCancelTrip(token: String, tripId: String) {
+    /**
+     * POST /trips/{tripId}/cancel-request
+     * Body: {"reason": "..."}
+     *
+     * 성공(200/201/202): 서버가 관리자에게 WS trip.cancel_requested 브로드캐스트
+     * → 관리자가 승인하면 WS trip.cancelled 수신 → MainActivity가 처리
+     */
+    private fun sendCancelRequest(token: String, tripId: String, reason: String) {
+        Log.d("CancelRequest", "▶ POST /trips/$tripId/cancel-request reason='$reason'")
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val conn = URL("${Constants.BASE_URL}/trips/$tripId/status?status=cancelled")
+                val conn = URL("${Constants.BASE_URL}/trips/$tripId/cancel-request")
                     .openConnection() as HttpURLConnection
-                conn.requestMethod = "PATCH"
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $token")
                 conn.connectTimeout = 8000
-                conn.readTimeout = 8000
+                conn.readTimeout    = 8000
+                conn.doOutput       = true
+
+                val body = JSONObject().apply { put("reason", reason) }.toString()
+                OutputStreamWriter(conn.outputStream).use { it.write(body) }
+
                 val code = conn.responseCode
+                Log.d("CancelRequest", "◀ HTTP $code")
+
                 withContext(Dispatchers.Main) {
-                    if (code in 200..204) {
-                        cancelTripId = null
-                        Toast.makeText(this@HelpActivity,
-                            R.string.help_cancel_request_complete, Toast.LENGTH_SHORT).show()
-                        finish()
-                    } else {
-                        Toast.makeText(this@HelpActivity,
-                            "취소 실패 (코드 $code)", Toast.LENGTH_SHORT).show()
+                    when (code) {
+                        in 200..204 -> {
+                            cancelTripId = null
+                            // 관리자 승인 전까지는 실제 취소가 아님 → 안내 메시지로 구분
+                            Toast.makeText(
+                                this@HelpActivity,
+                                getString(R.string.help_cancel_request_complete),
+                                Toast.LENGTH_LONG
+                            ).show()
+                            finish()
+                        }
+                        409 -> {
+                            // 이미 취소 요청 중인 경우
+                            Toast.makeText(
+                                this@HelpActivity,
+                                "이미 취소 요청이 접수되어 있습니다. 관리자 승인을 기다려 주세요.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        404 -> {
+                            Toast.makeText(
+                                this@HelpActivity,
+                                "운행 정보를 찾을 수 없습니다.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        else -> {
+                            val errBody = try {
+                                conn.errorStream?.bufferedReader()?.readText() ?: ""
+                            } catch (_: Exception) { "" }
+                            Log.e("CancelRequest", "❌ 오류 응답: $errBody")
+                            Toast.makeText(
+                                this@HelpActivity,
+                                "요청 실패 (코드 $code)",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
             } catch (e: Exception) {
+                Log.e("CancelRequest", "❌ 네트워크 오류: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@HelpActivity,
-                        "네트워크 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@HelpActivity,
+                        "네트워크 오류: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
     }
 
-    private fun fetchActiveTripAndCancel(token: String) {
+    /**
+     * tripId 없이 일반 도움말에서 진입한 경우:
+     * GET /trips?status=in_progress, scheduled 순으로 현재 활성 운행 조회 후
+     * cancel-request 전송
+     */
+    private fun fetchActiveTripAndSendRequest(token: String, reason: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // scheduled 먼저, 없으면 in_progress 조회
-                var tripId: String? = null
-                for (status in listOf("scheduled", "in_progress")) {
-                    if (!tripId.isNullOrEmpty()) break
+                var foundTripId: String? = null
+                for (status in listOf("in_progress", "scheduled")) {
+                    if (!foundTripId.isNullOrEmpty()) break
                     val conn = URL("${Constants.BASE_URL}/trips?status=$status")
                         .openConnection() as HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.setRequestProperty("Authorization", "Bearer $token")
                     conn.connectTimeout = 8000
-                    conn.readTimeout = 8000
+                    conn.readTimeout    = 8000
                     if (conn.responseCode == 200) {
-                        val arr = org.json.JSONArray(conn.inputStream.bufferedReader().readText())
-                        if (arr.length() > 0) tripId = arr.getJSONObject(0).optString("id")
+                        val arr = JSONArray(conn.inputStream.bufferedReader().readText())
+                        if (arr.length() > 0) {
+                            foundTripId = arr.getJSONObject(0).optString("id", "")
+                                .takeIf { it.isNotEmpty() }
+                        }
                     }
                 }
 
-                if (!tripId.isNullOrEmpty()) {
-                    executeCancelTrip(token, tripId)
+                if (!foundTripId.isNullOrEmpty()) {
+                    sendCancelRequest(token, foundTripId, reason)
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@HelpActivity,
-                            "취소할 운행이 없습니다.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@HelpActivity,
+                            "취소 요청할 진행 중인 운행이 없습니다.",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             } catch (e: Exception) {
+                Log.e("CancelRequest", "❌ 운행 조회 오류: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@HelpActivity,
-                        "네트워크 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@HelpActivity,
+                        "네트워크 오류: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
     }
 
+    // =========================================================================
+    // 기타 문의
+    // =========================================================================
+
     private fun showOtherInquiryDialog() {
-        // 배열 안에는 String이 들어가야 하므로 getString 사용
         val options = arrayOf(
             getString(R.string.chat_inquiry),
             getString(R.string.phone_support)

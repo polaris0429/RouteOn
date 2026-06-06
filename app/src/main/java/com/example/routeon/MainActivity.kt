@@ -2,7 +2,6 @@ package com.example.routeon
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -23,7 +22,6 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.Button
@@ -145,7 +143,6 @@ class MainActivity : BaseActivity(),
     private val knownTripStatuses = mutableMapOf<String, String>()
     private var isFirstFetch = true
     private var backPressedTime: Long = 0
-    private var permissionDialog: AlertDialog? = null
 
     private var isActivityResumed = false
     @Volatile private var pendingReplan: PendingReplan? = null
@@ -198,6 +195,7 @@ class MainActivity : BaseActivity(),
 
     private val expandedTripIds = mutableSetOf<String>()
     private val startedTripIds  = mutableSetOf<String>()   // 한 번이라도 안내를 시작한 배차(→ + 버튼 숨김 + "경로 재계산")
+    private val currentStopPhase = mutableMapOf<String, String>()  // key=stop.id, value=phase (v1.0.76)
     private val tripOriginText  = mutableMapOf<String, String>()
     private val tripDestText    = mutableMapOf<String, String>()
     private val tripOriginCoords = mutableMapOf<String, DoubleArray>()
@@ -271,55 +269,28 @@ class MainActivity : BaseActivity(),
             permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
             permissionsToRequest.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ANSWER_PHONE_CALLS) != PackageManager.PERMISSION_GRANTED)
-            permissionsToRequest.add(Manifest.permission.ANSWER_PHONE_CALLS)
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED)
-            permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
         if (permissionsToRequest.isNotEmpty())
             ActivityCompat.requestPermissions(this, permissionsToRequest.toTypedArray(), permissionRequestCode)
-        else { initKakaoNaviSDK(); startLocationUpdates(); checkSpecialPermissions() }
+        else { initKakaoNaviSDK(); startLocationUpdates() }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionRequestCode) {
-            var locationGranted = false
-            for (i in permissions.indices) {
-                if (permissions[i] == Manifest.permission.ACCESS_FINE_LOCATION && grantResults[i] == PackageManager.PERMISSION_GRANTED) locationGranted = true
+            val locationGranted = permissions.indices.any {
+                permissions[it] == Manifest.permission.ACCESS_FINE_LOCATION &&
+                grantResults[it] == PackageManager.PERMISSION_GRANTED
             }
-            if (locationGranted) { initKakaoNaviSDK(); startLocationUpdates(); checkSpecialPermissions() }
+            if (locationGranted) { initKakaoNaviSDK(); startLocationUpdates() }
             else { Toast.makeText(this, getString(R.string.navi_location_permission), Toast.LENGTH_LONG).show(); finish() }
         }
     }
 
     private fun checkSpecialPermissions() {
-        if (isFinishing || isDestroyed) return
-        val isNotificationEnabled = isNotificationServiceEnabled()
-        val isOverlayEnabled = Settings.canDrawOverlays(this)
-        if (!isNotificationEnabled || !isOverlayEnabled) {
-            if (permissionDialog?.isShowing == true) return
-            permissionDialog = AlertDialog.Builder(this)
-                .setTitle("필수 권한 설정 안내")
-                .setMessage("전화 제어 기능을 사용하려면 아래 두 권한이 반드시 필요합니다.\n\n1. 알림 접근 권한 (RouteOn 허용)\n2. 다른 앱 위에 표시 (RouteOn 허용)")
-                .setPositiveButton("설정하러 가기") { _, _ ->
-                    if (!isNotificationEnabled) startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
-                    else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                }
-                .setCancelable(false).create()
-            permissionDialog?.show()
-        } else { permissionDialog?.dismiss(); permissionDialog = null }
+        // 전화 오버레이 기능 제거됨 — 이 함수는 더 이상 호출되지 않음
     }
 
-    private fun isNotificationServiceEnabled(): Boolean {
-        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
-        if (!flat.isNullOrEmpty()) {
-            for (name in flat.split(":")) {
-                val cn = ComponentName.unflattenFromString(name)
-                if (cn != null && cn.packageName == packageName) return true
-            }
-        }
-        return false
-    }
+    private fun isNotificationServiceEnabled(): Boolean = false
 
     private fun applySystemBarsColor() {
         val barColor = if (isNightMode) Color.BLACK else Color.WHITE
@@ -350,8 +321,6 @@ class MainActivity : BaseActivity(),
         val prefs = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("light_sensor_auto", false) && lightSensor != null)
             sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
-            checkSpecialPermissions()
         val replan = pendingReplan
         if (replan != null) {
             pendingReplan = null
@@ -369,7 +338,6 @@ class MainActivity : BaseActivity(),
         super.onPause()
         isActivityResumed = false
         sensorManager.unregisterListener(this)
-        permissionDialog?.dismiss()
     }
 
     override fun onDestroy() {
@@ -377,7 +345,6 @@ class MainActivity : BaseActivity(),
         refreshHandler.removeCallbacks(refreshRunnable)
         webSocket?.cancel()
         sensorManager.unregisterListener(this)
-        permissionDialog?.dismiss(); permissionDialog = null
         restStopCountDown?.cancel(); restStopCountDown = null
         restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
         demoPlayer.stop()
@@ -446,11 +413,48 @@ class MainActivity : BaseActivity(),
                             KNSDK.sharedGuidance()?.stop()
                             binding.btnCompleteTrip.visibility = View.GONE
                             autoCompleteTriggered = false
-                            currentNaviTripId = null; currentStops.clear(); fetchTrips()
+                            currentNaviTripId = null; currentStops.clear(); currentStopPhase.clear(); fetchTrips()
                         }
                     }
                 }
             } catch (e: Exception) { }
+        }
+    }
+
+    /**
+     * PATCH /trips/{id}/progress — 세부 운행 단계 기록 (v1.0.76)
+     *
+     * @param tripId    현재 운행 ID
+     * @param phase     단계 문자열 (nullable — event 방식도 지원)
+     * @param waypointIndex waypoint 배열 인덱스 (nullable)
+     * @param event     "arrived" | "departed" | "completed" (nullable)
+     */
+    private fun sendTripProgress(
+        tripId: String,
+        phase: String? = null,
+        waypointIndex: Int? = null,
+        event: String? = null
+    ) {
+        val token = getSharedPreferences("RouteOnPrefs", android.content.Context.MODE_PRIVATE)
+            .getString("access_token", null) ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val conn = URL("${Constants.BASE_URL}/trips/$tripId/progress").openConnection() as HttpURLConnection
+                conn.requestMethod = "PATCH"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Authorization", "Bearer $token")
+                conn.connectTimeout = 8000; conn.readTimeout = 8000; conn.doOutput = true
+                val body = JSONObject().apply {
+                    if (phase != null)         put("phase", phase)
+                    if (waypointIndex != null) put("waypoint_index", waypointIndex)
+                    if (event != null)         put("event", event)
+                }
+                OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+                val code = conn.responseCode
+                Log.d("TripProgress", "▶ PATCH /trips/$tripId/progress → HTTP $code (phase=$phase, wp=$waypointIndex, event=$event)")
+            } catch (e: Exception) {
+                Log.e("TripProgress", "❌ progress 전송 오류: ${e.message}")
+            }
         }
     }
 
@@ -631,30 +635,105 @@ class MainActivity : BaseActivity(),
             }
         }
 
-        // ── 3. 경유지(상차지·하차지) 100m 이내 → 수동 완료 버튼 표시 ────────
+        // ── 3. 경유지(상차지·하차지) 100m 이내 → 세부 운행 단계 버튼 표시 ────────
         var nearbyStop: RouteStop? = null
-        for (stop in currentStops) {
+        var nearbyStopIndex: Int = -1
+        for ((idx, stop) in currentStops.withIndex()) {
             if (stop.type == "rest_stop" || stop.type == "destination") continue
             val dist = FloatArray(1)
             android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, dist)
-            if (dist[0] <= 100) { nearbyStop = stop; break }
+            if (dist[0] <= 100) { nearbyStop = stop; nearbyStopIndex = idx; break }
         }
         runOnUiThread {
             if (nearbyStop != null) {
+                val stop = nearbyStop
+                val stopIdx = nearbyStopIndex
+                val tripId = currentNaviTripId ?: ""
                 binding.btnCompleteTrip.visibility = View.VISIBLE
-                when (nearbyStop.type) {
-                    "loading" -> {
-                        binding.btnCompleteTrip.text = "🚛 상차 완료 (${nearbyStop.name})"
-                        binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E65100"))
-                        binding.btnCompleteTrip.setOnClickListener { completeDelivery(nearbyStop.id, nearbyStop.name) }
-                    }
-                    else -> {
-                        binding.btnCompleteTrip.text = "${getString(R.string.navi_btn_complete_delivery)} (${nearbyStop.name})"
-                        binding.btnCompleteTrip.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#0288D1"))
-                        binding.btnCompleteTrip.setOnClickListener { completeDelivery(nearbyStop.id, nearbyStop.name) }
-                    }
+                when (stop.type) {
+                    "loading" -> showLoadingPhaseButton(stop, stopIdx, tripId)
+                    else      -> showUnloadingPhaseButton(stop, stopIdx, tripId)
                 }
             } else binding.btnCompleteTrip.visibility = View.GONE
+        }
+    }
+
+    // =========================================================================
+    // 세부 운행 단계 버튼 (v1.0.76 — PATCH /trips/{id}/progress)
+    // 상차지: 도착 알림 → 상차 완료 순서
+    // 하차지: 도착 알림 → 하차 완료 순서
+    // 수동 해제 동작(상차 시 데드림 5분 후 자동 완료 등)은 추후 구현 예정
+    // =========================================================================
+
+    /** 상차지 단계 버튼 표시.
+     *  currentStopPhase 맵에 저장된 현재 단계에 따라 버튼 텍스트/색상/동작을 전환한다. */
+    private fun showLoadingPhaseButton(stop: RouteStop, stopIdx: Int, tripId: String) {
+        val phase = currentStopPhase[stop.id] ?: "approaching"   // approaching → arrived → completed
+        when (phase) {
+            "approaching" -> {
+                // 처음 도착 시 — 상차지 도착 알림 버튼
+                binding.btnCompleteTrip.text = "📣 상차지 도착 알림 (${stop.name})"
+                binding.btnCompleteTrip.backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#F57C00"))
+                binding.btnCompleteTrip.setOnClickListener {
+                    if (tripId.isNotEmpty()) {
+                        sendTripProgress(tripId, phase = "loading_arrived", waypointIndex = stopIdx, event = "arrived")
+                        Log.d("TripProgress", "📣 상차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
+                    }
+                    currentStopPhase[stop.id] = "arrived"
+                    showLoadingPhaseButton(stop, stopIdx, tripId)   // 즉시 버튼 갱신
+                    Toast.makeText(this, "📣 상차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            "arrived" -> {
+                // 도착 확인 후 — 상차 완료 버튼
+                binding.btnCompleteTrip.text = "🚛 상차 완료 (${stop.name})"
+                binding.btnCompleteTrip.backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#E65100"))
+                binding.btnCompleteTrip.setOnClickListener {
+                    if (tripId.isNotEmpty()) {
+                        sendTripProgress(tripId, phase = "loading_completed", waypointIndex = stopIdx, event = "completed")
+                        Log.d("TripProgress", "🚛 상차 완료 전송: ${stop.name} (wp=$stopIdx)")
+                    }
+                    currentStopPhase.remove(stop.id)
+                    completeDelivery(stop.id, stop.name)
+                }
+            }
+        }
+    }
+
+    private fun showUnloadingPhaseButton(stop: RouteStop, stopIdx: Int, tripId: String) {
+        val phase = currentStopPhase[stop.id] ?: "approaching"
+        when (phase) {
+            "approaching" -> {
+                // 처음 도착 시 — 하차지 도착 알림 버튼
+                binding.btnCompleteTrip.text = "📣 하차지 도착 알림 (${stop.name})"
+                binding.btnCompleteTrip.backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#0277BD"))
+                binding.btnCompleteTrip.setOnClickListener {
+                    if (tripId.isNotEmpty()) {
+                        sendTripProgress(tripId, phase = "unloading_arrived", waypointIndex = stopIdx, event = "arrived")
+                        Log.d("TripProgress", "📣 하차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
+                    }
+                    currentStopPhase[stop.id] = "arrived"
+                    showUnloadingPhaseButton(stop, stopIdx, tripId)
+                    Toast.makeText(this, "📣 하차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            "arrived" -> {
+                // 도착 확인 후 — 하차 완료 버튼
+                binding.btnCompleteTrip.text = "${getString(R.string.navi_btn_complete_delivery)} (${stop.name})"
+                binding.btnCompleteTrip.backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Color.parseColor("#0288D1"))
+                binding.btnCompleteTrip.setOnClickListener {
+                    if (tripId.isNotEmpty()) {
+                        sendTripProgress(tripId, phase = "unloading_completed", waypointIndex = stopIdx, event = "completed")
+                        Log.d("TripProgress", "📦 하차 완료 전송: ${stop.name} (wp=$stopIdx)")
+                    }
+                    currentStopPhase.remove(stop.id)
+                    completeDelivery(stop.id, stop.name)
+                }
+            }
         }
     }
 
@@ -894,32 +973,63 @@ class MainActivity : BaseActivity(),
         if (ton % 1.0 == 0.0) ton.toInt().toString() else String.format(Locale.US, "%.1f", ton)
 
     /**
-     * 배차카드 화물 정보 섹션 생성 (백엔드 v1.0.28).
-     * 하차(unloading) waypoint 의 recipient_name(화주·고객) / cargo_type(물건정보) / cargo_weight_ton(톤수)
-     * 중 하나라도 값이 있는 하차지를 모아 카드 안에 표시한다. 정보가 전혀 없으면 null 반환(섹션 미표시).
+     * 배차카드 화물 정보 섹션 생성 (백엔드 v1.0.28 + v1.0.76 연락정보 업데이트).
+     * 하차(unloading) waypoint 의 recipient_name / cargo_type / cargo_weight_ton /
+     * shipper_name / contact_name / contact_phone / shipper_phone 중
+     * 하나라도 값이 있는 하차지를 모아 카드 안에 표시한다.
+     * 정보가 전혀 없으면 null 반환(섹션 미표시).
      */
     private fun buildCargoInfoSection(waypointsArr: JSONArray?): LinearLayout? {
         if (waypointsArr == null || waypointsArr.length() == 0) return null
         val names = mutableListOf<String>()
         val infos = mutableListOf<String>()
+        val contactsList = mutableListOf<String>()  // 연락정보 줄단위 저장
         for (i in 0 until waypointsArr.length()) {
             val wp = waypointsArr.getJSONObject(i)
-            // waypoints 배열은 type(loading/unloading), optimized_route.route 는 node_type 을 사용
             val nodeType = wp.optString("node_type", "")
             val t        = wp.optString("type", "unloading")
             val isUnloading = if (nodeType.isNotEmpty()) nodeType == "unloading"
                               else (t == "unloading" || t == "destination")
             if (!isUnloading) continue
-            val recipient = cleanField(wp.optString("recipient_name", ""))
-            val cargo     = cleanField(wp.optString("cargo_type", ""))
-            val ton       = wp.optDouble("cargo_weight_ton", 0.0)
-            if (recipient.isEmpty() && cargo.isEmpty() && ton <= 0.0) continue
+
+            // 화물 정보
+            val recipient    = cleanField(wp.optString("recipient_name", ""))
+            val cargo        = cleanField(wp.optString("cargo_type", ""))
+            val cargoSize    = cleanField(wp.optString("cargo_size", ""))   // 백엔드가 무게/단위 문자열로 내려줌 (예: "4톤", "500kg")
+            val ton          = wp.optDouble("cargo_weight_ton", 0.0)
+            // 연락정보 (v1.0.76)
+            val shipperName  = cleanField(wp.optString("shipper_name", ""))
+            val contactName  = cleanField(wp.optString("contact_name", ""))
+            val contactPhone = cleanField(wp.optString("contact_phone", ""))
+            val shipperPhone = cleanField(wp.optString("shipper_phone", ""))
+
+            val hasCargoInfo    = recipient.isNotEmpty() || cargo.isNotEmpty() || ton > 0.0 || cargoSize.isNotEmpty()
+            val hasContactInfo  = shipperName.isNotEmpty() || contactName.isNotEmpty() ||
+                                  contactPhone.isNotEmpty() || shipperPhone.isNotEmpty()
+            if (!hasCargoInfo && !hasContactInfo) continue
+
             val name = cleanField(wp.optString("name", "")).ifEmpty { getString(R.string.navi_cargo_dest_fallback) }
-            val parts = mutableListOf<String>()
-            if (recipient.isNotEmpty()) parts.add("\uD83D\uDC64 $recipient")            // 👤 화주(고객)
-            if (cargo.isNotEmpty())     parts.add("\uD83D\uDCE6 $cargo")                // 📦 물건정보
-            if (ton > 0.0)              parts.add("\u2696\uFE0F " + getString(R.string.navi_cargo_ton, formatTon(ton)))  // ⚖️ 톤수
-            names.add(name); infos.add(parts.joinToString("   "))
+
+            // 화물 정보 줄
+            val cargoParts = mutableListOf<String>()
+            if (recipient.isNotEmpty()) cargoParts.add("\uD83D\uDC64 $recipient")            // 화주(고객)
+            if (cargo.isNotEmpty())     cargoParts.add("\uD83D\uDCE6 $cargo")                // 화물종류
+            // 무게: cargo_weight_ton 우선, 없으면 cargo_size 문자열 그대로 표시
+            when {
+                ton > 0.0          -> cargoParts.add("\u2696\uFE0F " + getString(R.string.navi_cargo_ton, formatTon(ton)))
+                cargoSize.isNotEmpty() -> cargoParts.add("\u2696\uFE0F $cargoSize")
+            }
+
+            // 연락정보 줄 (v1.0.76)
+            val contactParts = mutableListOf<String>()
+            if (shipperName.isNotEmpty())  contactParts.add("🏢 화주: $shipperName")
+            if (shipperPhone.isNotEmpty()) contactParts.add("📞 $shipperPhone")
+            if (contactName.isNotEmpty())  contactParts.add("👷 담당자: $contactName")
+            if (contactPhone.isNotEmpty()) contactParts.add("📱 $contactPhone")
+
+            names.add(name)
+            infos.add(cargoParts.joinToString("   "))
+            contactsList.add(contactParts.joinToString("   "))
         }
         if (names.isEmpty()) return null
 
@@ -935,7 +1045,7 @@ class MainActivity : BaseActivity(),
             ).apply { topMargin = dpToPx(12) }
         }
         section.addView(TextView(this).apply {
-            text = "\uD83D\uDCCB " + getString(R.string.navi_cargo_section_title)   // 📋 화물 정보
+            text = "\uD83D\uDCCB " + getString(R.string.navi_cargo_section_title)   // 화물 정보
             textSize = 12f; setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(Color.parseColor(if (isNightMode) "#AAB4C0" else "#607D8B"))
             layoutParams = LinearLayout.LayoutParams(
@@ -947,25 +1057,72 @@ class MainActivity : BaseActivity(),
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { if (idx > 0) topMargin = dpToPx(8) }
+                ).apply { if (idx > 0) topMargin = dpToPx(10) }
             }
             // 여러 하차지가 있을 때만 하차지 이름을 머리글로 표시
             if (names.size > 1) {
                 rowBox.addView(TextView(this).apply {
-                    text = "\uD83D\uDCCD ${names[idx]}"   // 📍 하차지명
+                    text = "\uD83D\uDCCD ${names[idx]}"
                     textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
                     setTextColor(if (isNightMode) Color.parseColor("#E0E0E0") else Color.parseColor("#263238"))
                     maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
                 })
             }
-            rowBox.addView(TextView(this).apply {
-                text = infos[idx]
-                textSize = 13f
-                setTextColor(if (isNightMode) Color.parseColor("#C2CAD2") else Color.parseColor("#455A64"))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { if (names.size > 1) topMargin = dpToPx(2) }
-            })
+            // 화물 정보 행 (recipient / cargo / ton)
+            if (infos[idx].isNotEmpty()) {
+                rowBox.addView(TextView(this).apply {
+                    text = infos[idx]
+                    textSize = 13f
+                    setTextColor(if (isNightMode) Color.parseColor("#C2CAD2") else Color.parseColor("#455A64"))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { if (names.size > 1) topMargin = dpToPx(2) }
+                })
+            }
+            // 연락정보 행 (shipper / contact) — v1.0.76 신규
+            if (contactsList[idx].isNotEmpty()) {
+                // 분리선
+                if (infos[idx].isNotEmpty()) {
+                    rowBox.addView(View(this).apply {
+                        setBackgroundColor(if (isNightMode) Color.parseColor("#2A2A3A") else Color.parseColor("#E0E0E0"))
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, 1
+                        ).apply { topMargin = dpToPx(4); bottomMargin = dpToPx(4) }
+                    })
+                }
+                // 연락정보 레이아웃: 라벨 + 클릭 가능 전화번호
+                val contactInfo = contactsList[idx]
+                // 연락정보를 라인별로 분리해 각 줄단위 TextView
+                val contactLines = contactInfo.split("   ")
+                for (line in contactLines) {
+                    if (line.isBlank()) continue
+                    // 전화번호 형식 (군단에 "폰" 아이콘 있으면 콜 가능으로 처리)
+                    val isPhone = line.contains("📞") || line.contains("📱")
+                    rowBox.addView(TextView(this).apply {
+                        text = line; textSize = 12f
+                        setTextColor(
+                            if (isPhone)
+                                Color.parseColor(if (isNightMode) "#80CBFF" else "#0277BD")
+                            else
+                                Color.parseColor(if (isNightMode) "#B0BEC5" else "#546E7A")
+                        )
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply { topMargin = dpToPx(1) }
+                        if (isPhone) {
+                            // 전화번호만 클릭 시 다이얼러
+                            val raw = line.replace(Regex("[^0-9]"), "")
+                            if (raw.length >= 9) {
+                                isClickable = true; isFocusable = true
+                                setOnClickListener {
+                                    val intent = Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:$raw"))
+                                    startActivity(intent)
+                                }
+                            }
+                        }
+                    })
+                }
+            }
             section.addView(rowBox)
         }
         return section
@@ -1629,6 +1786,7 @@ class MainActivity : BaseActivity(),
         KNSDK.sharedGuidance()?.stop()
         if (demoPlayer.isPlaying) demoPlayer.stop()
         currentNaviTripId = null; currentStops.clear()
+        currentStopPhase.clear()
         autoCompleteTriggered = false; suppressCompleteSoundOnce = false
         visitedRestStopKeys.clear()
         if (isRestStopActive) forceCancelRestStop()
@@ -1763,6 +1921,7 @@ class MainActivity : BaseActivity(),
         currentStops.clear()
         visitedRestStopKeys.clear()
         autoCompleteTriggered = false
+        currentStopPhase.clear()
         scenario.stops.forEach { stop ->
             currentStops.add(RouteStop(
                 id    = "",

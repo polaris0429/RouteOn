@@ -120,7 +120,7 @@
     <string name="help_direct_input_hint">취소 사유를 입력해 주세요</string>
     <string name="help_direct_input_empty_toast">사유를 입력해 주세요.</string>
     <string name="help_cancel_confirm_message">취소 사유: %1$s\n\n배차를 취소하시겠습니까?</string>
-    <string name="help_cancel_request_complete">배차가 취소되었습니다.</string>
+    <string name="help_cancel_request_complete">취소 요청이 접수되었습니다. 관리자 승인 후 취소 처리됩니다.</string>
 
     <!-- 배차 수락 / 출발지 선택 흐름 -->
     <string name="navi_btn_accept_dispatch">배차 수락</string>

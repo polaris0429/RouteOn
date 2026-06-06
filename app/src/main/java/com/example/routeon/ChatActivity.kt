@@ -295,6 +295,79 @@ class ChatActivity : BaseActivity() {
         }
     }
 
+    // ── 앱 전용 로컬 메시지 상수 ──────────────────────────────────────────
+    // 서버에 전송되지 않고 앱 화면에만 표시되는 메시지임을 명시하기 위해
+    // id 접두어로 "local_" 을 사용한다. (서버 UUID와 충돌 없음)
+    companion object {
+        private const val LOCAL_ID_WELCOME   = "local_welcome"
+        private const val LOCAL_ID_AUTO_REPLY = "local_auto_reply"
+        private const val SIX_HOURS_MS = 6 * 60 * 60 * 1000L
+    }
+
+    /**
+     * 서버 히스토리 로드 완료 후 호출.
+     * - 히스토리가 비어 있거나
+     * - 마지막 메시지가 6시간 이상 지난 경우
+     * → 앱 전용 웰컴 메시지를 UI에만 추가한다.
+     */
+    private fun maybeShowWelcomeMessage() {
+        // 이미 웰컴 메시지가 표시된 경우 중복 추가 방지
+        if (messages.any { it.id == LOCAL_ID_WELCOME }) return
+
+        val shouldShow = messages.isEmpty() || run {
+            // 마지막 실제 서버 메시지의 타임스탬프 계산
+            val lastServer = messages.lastOrNull { !it.id.startsWith("local_") }
+            if (lastServer == null) {
+                true
+            } else {
+                // timestampMs 가 0 이면(히스토리 로드분) time 문자열로 경과 추정 불가 → 서버 id 로 판별
+                // 여기서는 현재 시각과 비교할 절대 시간이 없으므로,
+                // 히스토리의 마지막 메시지 created_at 을 별도 필드에 저장해 사용한다.
+                lastServerMessageTimeMs > 0 &&
+                (System.currentTimeMillis() - lastServerMessageTimeMs) >= SIX_HOURS_MS
+            }
+        }
+
+        if (shouldShow) {
+            val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            messages.add(
+                ChatMessage(
+                    id          = LOCAL_ID_WELCOME,
+                    text        = getString(R.string.chat_welcome),
+                    isSent      = false,
+                    time        = now,
+                    timestampMs = System.currentTimeMillis()
+                )
+            )
+            adapter.notifyItemInserted(messages.size - 1)
+            recycler.scrollToPosition(messages.size - 1)
+        }
+    }
+
+    /**
+     * 기사가 메시지를 전송한 직후 앱 전용 자동 응답을 표시한다.
+     * 이전 자동 응답이 이미 있으면 추가하지 않는다.
+     */
+    private fun showAutoReply() {
+        if (messages.any { it.id == LOCAL_ID_AUTO_REPLY }) return
+        // 마지막 실제 전송 이후 자동 응답 표시
+        val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        messages.add(
+            ChatMessage(
+                id          = LOCAL_ID_AUTO_REPLY,
+                text        = getString(R.string.chat_auto_reply),
+                isSent      = false,
+                time        = now,
+                timestampMs = System.currentTimeMillis()
+            )
+        )
+        adapter.notifyItemInserted(messages.size - 1)
+        recycler.scrollToPosition(messages.size - 1)
+    }
+
+    /** 히스토리에서 마지막 서버 메시지의 created_at 을 파싱해 저장하는 필드 */
+    private var lastServerMessageTimeMs: Long = 0L
+
     /** 최근 50건 메시지 히스토리 로드 (오름차순 — 서버 응답 그대로) */
     private fun fetchMessageHistory(convId: String) {
         val t = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE)
@@ -324,12 +397,20 @@ class ChatActivity : BaseActivity() {
                                 timestampMs = 0L
                             )
                         }
+                        // 마지막 서버 메시지의 created_at 절대 시간 저장 (웰컴 메시지 6시간 찬어 판단용)
+                        val lastCreatedAt = if (arr.length() > 0)
+                            arr.getJSONObject(arr.length() - 1).optString("created_at", "")
+                        else ""
+                        val parsedLastMs = isoToMs(lastCreatedAt)
                         withContext(Dispatchers.Main) {
+                            if (parsedLastMs > 0) lastServerMessageTimeMs = parsedLastMs
                             messages.clear()
                             messages.addAll(history)
                             adapter.notifyDataSetChanged()
                             if (messages.isNotEmpty())
                                 recycler.scrollToPosition(messages.size - 1)
+                            // 웰컴 메시지: 히스토리 로드 후 해당 조건시만 표시
+                            maybeShowWelcomeMessage()
                         }
                     }
                     403, 404 -> {
@@ -364,6 +445,9 @@ class ChatActivity : BaseActivity() {
         messages.add(ChatMessage("", text, true, now, System.currentTimeMillis()))
         adapter.notifyItemInserted(messages.size - 1)
         recycler.scrollToPosition(messages.size - 1)
+
+        // 앱 전용 자동 응답: 첫 마지막 전송 시만 표시
+        showAutoReply()
 
         // 타임아웃을 넉넉히 설정 (내비 중 네트워크 경합 방지)
         activityScope.launch(Dispatchers.IO) {
@@ -437,6 +521,23 @@ class ChatActivity : BaseActivity() {
         } catch (e: Exception) {
             Log.w("ChatActivity", "날짜 파싱 실패: $iso — ${e.message}")
             ""
+        }
+    }
+
+    /**
+     * ISO 8601 타임스탬프 → Unix 밀리초 변환.
+     * 마지막 메시지의 경과 시간 판단에 사용한다.
+     */
+    private fun isoToMs(iso: String): Long {
+        if (iso.isEmpty()) return 0L
+        return try {
+            val normalized = iso.substringBefore('.')
+                .takeIf { it.length >= 19 } ?: iso.take(19)
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+                .parse(normalized)?.time ?: 0L
+        } catch (e: Exception) {
+            Log.w("ChatActivity", "isoToMs 파싱 실패: $iso — ${e.message}")
+            0L
         }
     }
 

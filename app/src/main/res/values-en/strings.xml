@@ -120,6 +120,6 @@
     <string name="help_direct_input_hint">Please enter the reason for cancellation</string>
     <string name="help_direct_input_empty_toast">Please enter a reason.</string>
     <string name="help_cancel_confirm_message">Reason: %1$s\n\nAre you sure you want to cancel the dispatch?</string>
-    <string name="help_cancel_request_complete">Cancellation request has been submitted.</string>
+    <string name="help_cancel_request_complete">Cancellation request submitted. It will be processed after admin approval.</string>
 
 </resources>
