@@ -12,6 +12,9 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -151,9 +154,11 @@ class MainActivity : BaseActivity(),
     private var restStopCountDown: CountDownTimer? = null
     private val visitedRestStopKeys = mutableSetOf<String>()
     private val REST_STOP_RADIUS_M = 150f
+    private val REST_STOP_PREALERT_M = 500f      // 이 반경 이내 접근 시 사전 알림(bell→rest) 1회 재생
     private val REST_STOP_EXIT_RADIUS_M = 200f   // 이 반경 벗어나면 휴식 강제 취소
     private val REST_STOP_DURATION_MS = 15 * 60 * 1000L
     private val REST_STOP_DEMO_DURATION_MS = 10 * 1000L
+    private val prealertedRestStopKeys = mutableSetOf<String>()   // 사전 알림 이미 울린 휴게소 (중복 방지)
     private var activeRestStopLat: Double = 0.0   // 현재 휴식 중인 휴게소 좌표
     private var activeRestStopLng: Double = 0.0
     private var autoCompleteTriggered = false        // 최종 목적지 자동 완료 중복 방지
@@ -169,19 +174,107 @@ class MainActivity : BaseActivity(),
         get() = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
 
-    private fun playSequential(firstRes: Int, secondRes: Int) {
+    // ─── 알림음 재생 시스템 ───────────────────────────────────────────────
+    // KNSDK 가 내비 음성 안내용으로 오디오 포커스를 점유하면 MediaPlayer 가 무음
+    // 처리되는 문제가 있어, 재생 전 AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK 를 요청한다.
+    // 또한 여러 이벤트가 겹쳐도 스킵되지 않도록 재생 큐로 직렬화한다.
+    private val soundQueue = ArrayDeque<Int>()
+    private var soundPlayer: MediaPlayer? = null
+    private var isSoundPlaying = false
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    private fun requestSoundFocus() {
         try {
-            val mp1 = MediaPlayer.create(this, firstRes) ?: return
-            mp1.setOnCompletionListener { first ->
-                first.release()
-                try {
-                    val mp2 = MediaPlayer.create(this@MainActivity, secondRes) ?: return@setOnCompletionListener
-                    mp2.setOnCompletionListener { it.release() }
-                    mp2.start()
-                } catch (_: Exception) { }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(attrs)
+                    .build()
+                audioFocusRequest = req
+                audioManager.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(null, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             }
-            mp1.start()
         } catch (_: Exception) { }
+    }
+
+    private fun abandonSoundFocus() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(null)
+            }
+        } catch (_: Exception) { }
+    }
+
+    /**
+     * 알림음을 순서대로 재생한다. 여러 음원을 넘기면 앞에서부터 차례로(겹치지 않고) 재생된다.
+     * 예) playSounds(R.raw.bell, R.raw.trip_new) → bell 끝난 직후 trip_new 재생.
+     * 동시에 다른 이벤트가 들어와도 큐에 쌓여 스킵 없이 순차 재생된다.
+     */
+    private fun playSounds(vararg resIds: Int) {
+        if (resIds.isEmpty()) return
+        synchronized(soundQueue) {
+            for (r in resIds) soundQueue.addLast(r)
+        }
+        if (!isSoundPlaying) {
+            requestSoundFocus()
+            playNextInQueue()
+        }
+    }
+
+    /** 하위 호환용: 두 음원 순차 재생 */
+    private fun playSequential(firstRes: Int, secondRes: Int) = playSounds(firstRes, secondRes)
+
+    private fun playNextInQueue() {
+        val next: Int? = synchronized(soundQueue) {
+            if (soundQueue.isEmpty()) null else soundQueue.removeFirst()
+        }
+        if (next == null) {
+            isSoundPlaying = false
+            abandonSoundFocus()
+            return
+        }
+        isSoundPlaying = true
+        try {
+            val mp = MediaPlayer.create(this, next)
+            if (mp == null) {
+                // 생성 실패해도 다음 큐로 진행 (스킵 방지)
+                playNextInQueue()
+                return
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mp.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+            }
+            soundPlayer = mp
+            mp.setOnCompletionListener {
+                it.release()
+                if (soundPlayer === it) soundPlayer = null
+                playNextInQueue()
+            }
+            mp.setOnErrorListener { p, _, _ ->
+                try { p.release() } catch (_: Exception) { }
+                if (soundPlayer === p) soundPlayer = null
+                playNextInQueue()
+                true
+            }
+            mp.start()
+        } catch (_: Exception) {
+            playNextInQueue()
+        }
     }
 
     private var lastLat: Double = 0.0
@@ -257,6 +350,7 @@ class MainActivity : BaseActivity(),
         binding.btnHelp.setOnClickListener { startActivity(Intent(this, HelpActivity::class.java)) }
         binding.btnChat.setOnClickListener { startActivity(Intent(this, ChatActivity::class.java)) }
         binding.btnTripHistory.setOnClickListener { startActivity(Intent(this, TripHistoryActivity::class.java)) }
+        binding.btnAddressSearch.setOnClickListener { showAddressSearchDialog() }
 
         connectWebSocket()
         refreshHandler.post(refreshRunnable)
@@ -348,6 +442,12 @@ class MainActivity : BaseActivity(),
         restStopCountDown?.cancel(); restStopCountDown = null
         restOverlayHandler.removeCallbacks(restOverlayReshowRunnable)
         demoPlayer.stop()
+        // 알림음 자원 정리
+        soundQueue.clear()
+        try { soundPlayer?.release() } catch (_: Exception) { }
+        soundPlayer = null
+        isSoundPlaying = false
+        abandonSoundFocus()
         if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized)
             fusedLocationClient.removeLocationUpdates(locationCallback)
     }
@@ -582,9 +682,16 @@ class MainActivity : BaseActivity(),
             for (stop in currentStops) {
                 if (stop.type != "rest_stop") continue
                 val key = "${stop.lat}_${stop.lng}"
-                if (key in visitedRestStopKeys) continue
                 val dist = FloatArray(1)
                 android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, dist)
+                // ─ 사전 알림: 500m 이내 접근 시 bell→rest 1회 재생 (휴식 화면은 아직 안 뜸) ─
+                if (dist[0] <= REST_STOP_PREALERT_M && key !in prealertedRestStopKeys && key !in visitedRestStopKeys) {
+                    prealertedRestStopKeys.add(key)
+                    Log.d("RestStop", "🔔 휴게소 사전 알림: ${stop.name} (${dist[0].toInt()}m 전방)")
+                    runOnUiThread { playSounds(R.raw.bell, R.raw.rest) }
+                }
+                // ─ 150m 이내 진입 → 휴식 화면 표시 (사운드 없음) ─
+                if (key in visitedRestStopKeys) continue
                 if (dist[0] <= REST_STOP_RADIUS_M) {
                     visitedRestStopKeys.add(key)
                     Log.d("RestStop", "📍 휴게소 감지: ${stop.name} (${dist[0].toInt()}m)")
@@ -1258,61 +1365,93 @@ class MainActivity : BaseActivity(),
                 val hasStarted = status == "in_progress" || tripId in startedTripIds
                 val originCoords = tripOriginCoords.getOrPut(tripId) { doubleArrayOf(0.0, 0.0) }
                 val destCoords   = tripDestCoords.getOrPut(tripId)   { doubleArrayOf(0.0, 0.0) }
-                val originInputRow = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dpToPx(6) }
-                }
-                val originLabel = TextView(this).apply {
-                    text = "출발지"; textSize = 12f; setTypeface(null, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor(if (isNightMode) "#AAAAAA" else "#666666"))
-                    layoutParams = LinearLayout.LayoutParams(dpToPx(44), LinearLayout.LayoutParams.WRAP_CONTENT)
-                }
-                val originField = android.widget.EditText(this).apply {
-                    hint = "출발지 이름·주소 검색"; textSize = 13f; maxLines = 1; isSingleLine = true; setText(tripOriginText[tripId] ?: "")
-                    setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
-                    setHintTextColor(Color.parseColor(if (isNightMode) "#666666" else "#AAAAAA"))
-                    background = GradientDrawable().apply { setColor(if (isNightMode) Color.parseColor("#2A2A3A") else Color.parseColor("#EBEBEB")); cornerRadius = dpToPx(8).toFloat() }
-                    setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8)); imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                }
-                originField.addTextChangedListener(object : android.text.TextWatcher {
-                    override fun afterTextChanged(s: android.text.Editable?) { tripOriginText[tripId] = s?.toString() ?: "" }
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                })
-                val originSearchBtn = TextView(this).apply {
-                    text = "🔍"; textSize = 15f; gravity = android.view.Gravity.CENTER; setPadding(dpToPx(6), 0, 0, 0)
-                    layoutParams = LinearLayout.LayoutParams(dpToPx(34), dpToPx(34)); isClickable = true; isFocusable = true
-                }
-                originInputRow.addView(originLabel); originInputRow.addView(originField); originInputRow.addView(originSearchBtn)
 
-                val destInputRow = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                // ── TMAP 스타일 알약형 출발지/목적지 선택바 (탭하면 전체화면 검색) ─────────
+                // 입력 상태 표시용 TextView 참조를 밖으로 빼둔다 (선택 후 갱신용)
+                fun makePillRow(
+                    iconColor: String, labelText: String, valueHolder: TextView
+                ): LinearLayout {
+                    val pinDot = TextView(this).apply {
+                        text = "\u25CF"; textSize = 11f; setTextColor(Color.parseColor(iconColor))
+                        gravity = android.view.Gravity.CENTER
+                        layoutParams = LinearLayout.LayoutParams(dpToPx(22), LinearLayout.LayoutParams.WRAP_CONTENT)
+                    }
+                    val label = TextView(this).apply {
+                        text = labelText; textSize = 12f; setTypeface(null, android.graphics.Typeface.BOLD)
+                        setTextColor(Color.parseColor(if (isNightMode) "#AAAAAA" else "#888888"))
+                        layoutParams = LinearLayout.LayoutParams(dpToPx(40), LinearLayout.LayoutParams.WRAP_CONTENT)
+                    }
+                    val searchIcon = TextView(this).apply {
+                        text = "\uD83D\uDD0D"; textSize = 14f; gravity = android.view.Gravity.CENTER
+                        layoutParams = LinearLayout.LayoutParams(dpToPx(28), dpToPx(28))
+                    }
+                    return LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                        background = GradientDrawable().apply {
+                            setColor(if (isNightMode) Color.parseColor("#2A2A3A") else Color.parseColor("#F2F4F6"))
+                            cornerRadius = dpToPx(24).toFloat()
+                            setStroke(dpToPx(1), if (isNightMode) Color.parseColor("#3A3A4A") else Color.parseColor("#E0E4E8"))
+                        }
+                        setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10))
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                            .apply { bottomMargin = dpToPx(8) }
+                        addView(pinDot); addView(label); addView(valueHolder); addView(searchIcon)
+                        isClickable = true; isFocusable = true
+                    }
                 }
-                val destLabel = TextView(this).apply {
-                    text = "목적지"; textSize = 12f; setTypeface(null, android.graphics.Typeface.BOLD)
-                    setTextColor(Color.parseColor(if (isNightMode) "#AAAAAA" else "#666666"))
-                    layoutParams = LinearLayout.LayoutParams(dpToPx(44), LinearLayout.LayoutParams.WRAP_CONTENT)
-                }
-                val destField = android.widget.EditText(this).apply {
-                    hint = "목적지 이름·주소 검색"; textSize = 13f; maxLines = 1; isSingleLine = true; setText(tripDestText[tripId] ?: "")
-                    setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
-                    setHintTextColor(Color.parseColor(if (isNightMode) "#666666" else "#AAAAAA"))
-                    background = GradientDrawable().apply { setColor(if (isNightMode) Color.parseColor("#2A2A3A") else Color.parseColor("#EBEBEB")); cornerRadius = dpToPx(8).toFloat() }
-                    setPadding(dpToPx(10), dpToPx(8), dpToPx(10), dpToPx(8)); imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+
+                // 출발지 값 표시 TextView
+                val originValue = TextView(this).apply {
+                    val saved = tripOriginText[tripId] ?: ""
+                    text = saved.ifEmpty { "출발지 검색 (비워두면 현재 위치)" }
+                    textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(
+                        if (saved.isEmpty()) Color.parseColor(if (isNightMode) "#777777" else "#AAAAAA")
+                        else if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A")
+                    )
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
-                destField.addTextChangedListener(object : android.text.TextWatcher {
-                    override fun afterTextChanged(s: android.text.Editable?) { tripDestText[tripId] = s?.toString() ?: "" }
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                })
-                val destSearchBtn = TextView(this).apply {
-                    text = "🔍"; textSize = 15f; gravity = android.view.Gravity.CENTER; setPadding(dpToPx(6), 0, 0, 0)
-                    layoutParams = LinearLayout.LayoutParams(dpToPx(34), dpToPx(34)); isClickable = true; isFocusable = true
+                // 목적지 값 표시 TextView
+                val destValue = TextView(this).apply {
+                    val saved = tripDestText[tripId] ?: ""
+                    text = saved.ifEmpty { "목적지 검색 (비워두면 자동)" }
+                    textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(
+                        if (saved.isEmpty()) Color.parseColor(if (isNightMode) "#777777" else "#AAAAAA")
+                        else if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A")
+                    )
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 }
-                destInputRow.addView(destLabel); destInputRow.addView(destField); destInputRow.addView(destSearchBtn)
+
+                val originInputRow = makePillRow("#2E7D32", "출발", originValue)
+                val destInputRow   = makePillRow("#C62828", "도착", destValue)
+
+                // 출발지 바 탭 → TMAP 검색 화면
+                originInputRow.setOnClickListener {
+                    showTmapStyleSearchDialog(
+                        titleHint = "출발지를 입력하세요",
+                        prefill = tripOriginText[tripId] ?: "",
+                        onPicked = { name, lat, lon ->
+                            tripOriginText[tripId] = name
+                            originCoords[0] = lat; originCoords[1] = lon
+                            originValue.text = name
+                            originValue.setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
+                        }
+                    )
+                }
+                // 목적지 바 탭 → TMAP 검색 화면
+                destInputRow.setOnClickListener {
+                    showTmapStyleSearchDialog(
+                        titleHint = "목적지를 입력하세요",
+                        prefill = tripDestText[tripId] ?: "",
+                        onPicked = { name, lat, lon ->
+                            tripDestText[tripId] = name
+                            destCoords[0] = lat; destCoords[1] = lon
+                            destValue.text = name
+                            destValue.setTextColor(if (isNightMode) Color.parseColor("#E8E8E8") else Color.parseColor("#1A1A1A"))
+                        }
+                    )
+                }
 
                 val expandPanel = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
@@ -1322,18 +1461,6 @@ class MainActivity : BaseActivity(),
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dpToPx(6) }
                 }
                 expandPanel.addView(originInputRow); expandPanel.addView(destInputRow)
-
-                val doSearch = { field: android.widget.EditText, coords: DoubleArray, isOrigin: Boolean ->
-                    val q = field.text.toString().trim()
-                    if (q.isEmpty()) Toast.makeText(this@MainActivity, "검색어를 입력하세요", Toast.LENGTH_SHORT).show()
-                    else searchAddressAndShow(q, field, coords) { selectedText ->
-                        if (isOrigin) tripOriginText[tripId] = selectedText else tripDestText[tripId] = selectedText
-                    }
-                }
-                originSearchBtn.setOnClickListener { doSearch(originField, originCoords, true) }
-                destSearchBtn.setOnClickListener   { doSearch(destField, destCoords, false) }
-                originField.setOnEditorActionListener { _, actionId, _ -> if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) { doSearch(originField, originCoords, true); true } else false }
-                destField.setOnEditorActionListener   { _, actionId, _ -> if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) { doSearch(destField, destCoords, false); true } else false }
 
                 var isExpanded = tripId in expandedTripIds
                 val plusRow2 = LinearLayout(this).apply {
@@ -1376,8 +1503,8 @@ class MainActivity : BaseActivity(),
                             return@setOnClickListener
                         }
                         startedTripIds.add(tripId)
-                        val originText = originField.text.toString().trim()
-                        val destText   = destField.text.toString().trim()
+                        val originText = (tripOriginText[tripId] ?: "").trim()
+                        val destText   = (tripDestText[tripId] ?: "").trim()
                         // 기사가 검색으로 목적지 좌표까지 확정한 경우에만 userProvidedDest = true
                         val userSetDest = destText.isNotEmpty() && destCoords[0] != 0.0
                         currentNaviTripId = tripId
@@ -1510,6 +1637,7 @@ class MainActivity : BaseActivity(),
         val token = getSharedPreferences("RouteOnPrefs", Context.MODE_PRIVATE).getString("access_token", null) ?: return
         Toast.makeText(this, getString(R.string.navi_optimizing), Toast.LENGTH_LONG).show()
         visitedRestStopKeys.clear()
+        prealertedRestStopKeys.clear()
         autoCompleteTriggered = false
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -1789,6 +1917,7 @@ class MainActivity : BaseActivity(),
         currentStopPhase.clear()
         autoCompleteTriggered = false; suppressCompleteSoundOnce = false
         visitedRestStopKeys.clear()
+        prealertedRestStopKeys.clear()
         if (isRestStopActive) forceCancelRestStop()
         binding.naviContainer.post {
             binding.btnCompleteTrip.visibility = View.GONE
@@ -1818,6 +1947,290 @@ class MainActivity : BaseActivity(),
     override fun guidanceDidUpdateAroundSafeties(aGuidance: KNGuidance, aSafeties: List<KNSafety>?) { if (::naviView.isInitialized) naviView.guidanceDidUpdateAroundSafeties(aGuidance, aSafeties) }
     override fun shouldPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice, aNewData: MutableList<ByteArray>): Boolean = if (::naviView.isInitialized) naviView.shouldPlayVoiceGuide(aGuidance, aVoiceGuide, aNewData) else false
     override fun didFinishPlayVoiceGuide(aGuidance: KNGuidance, aVoiceGuide: KNGuide_Voice) { if (::naviView.isInitialized) naviView.didFinishPlayVoiceGuide(aGuidance, aVoiceGuide) }
+
+    /**
+     * 헤더 돋보기 버튼 → 주소 검색 화면(TMAP 스타일).
+     */
+    private fun showAddressSearchDialog() {
+        showTmapStyleSearchDialog(
+            titleHint = "목적지를 입력하세요",
+            onPicked = { name, lat, lon ->
+                bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+                Toast.makeText(this, "📍 '$name' 경로 안내 시작", Toast.LENGTH_SHORT).show()
+                startNavigationWithWGS84(name, lat, lon)
+            }
+        )
+    }
+
+    // =========================================================================
+    // TMAP 스타일 주소 검색 화면 (공통)
+    // 상단 알약형 검색창(뒤로가기 + 입력 + 지우기 + 돋보기) + 결과 리스트
+    // =========================================================================
+    private fun showTmapStyleSearchDialog(
+        titleHint: String,
+        prefill: String = "",
+        onPicked: (String, Double, Double) -> Unit
+    ) {
+        val night = isNightMode
+        val bgColor   = if (night) Color.parseColor("#1A1A24") else Color.WHITE
+        val barColor  = if (night) Color.parseColor("#2A2A38") else Color.WHITE
+        val barStroke = if (night) Color.parseColor("#3A3A4A") else Color.parseColor("#DDDDDD")
+        val textColor = if (night) Color.parseColor("#ECECEC") else Color.parseColor("#1A1A1A")
+        val hintColor = if (night) Color.parseColor("#888888") else Color.parseColor("#AAAAAA")
+        val iconTint  = if (night) Color.parseColor("#BBBBBB") else Color.parseColor("#555555")
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        val searchBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                setColor(barColor); cornerRadius = dpToPx(28).toFloat(); setStroke(dpToPx(1), barStroke)
+            }
+            setPadding(dpToPx(6), dpToPx(4), dpToPx(10), dpToPx(4))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(52))
+                .apply { setMargins(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(8)) }
+        }
+        val backBtn = TextView(this).apply {
+            text = "\u2039"; textSize = 26f; setTextColor(iconTint); gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(44)); isClickable = true; isFocusable = true
+        }
+        val searchInput = android.widget.EditText(this).apply {
+            hint = titleHint; textSize = 17f; maxLines = 1; isSingleLine = true
+            setText(prefill); setSelection(prefill.length)
+            setTextColor(textColor); setHintTextColor(hintColor); background = null
+            setPadding(dpToPx(6), 0, dpToPx(6), 0)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+        }
+        val clearBtn = TextView(this).apply {
+            text = "\u2715"; textSize = 13f; setTextColor(Color.WHITE); gravity = android.view.Gravity.CENTER
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#BBBBBB")) }
+            layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply { marginEnd = dpToPx(8) }
+            isClickable = true; isFocusable = true
+            visibility = if (prefill.isEmpty()) View.GONE else View.VISIBLE
+        }
+        val goBtn = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_search)
+            setColorFilter(iconTint)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            setPadding(dpToPx(8), dpToPx(8), dpToPx(8), dpToPx(8))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(40), dpToPx(44)); isClickable = true; isFocusable = true
+        }
+        searchBar.addView(backBtn); searchBar.addView(searchInput); searchBar.addView(clearBtn); searchBar.addView(goBtn)
+        root.addView(searchBar)
+
+        val resultScroll = android.widget.ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            isFillViewport = true
+        }
+        val resultList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        resultScroll.addView(resultList)
+        root.addView(resultScroll)
+
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar_Fullscreen)
+            .setView(root).create()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bgColor))
+        dialog.show()
+
+        backBtn.setOnClickListener { dialog.dismiss() }
+        clearBtn.setOnClickListener { searchInput.setText(""); resultList.removeAllViews() }
+        searchInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) {
+                clearBtn.visibility = if ((s?.length ?: 0) > 0) View.VISIBLE else View.GONE
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+        val runSearch = {
+            val q = searchInput.text.toString().trim()
+            if (q.isEmpty()) Toast.makeText(this, "검색어를 입력하세요", Toast.LENGTH_SHORT).show()
+            else performKeywordSearch(q, resultList) { name, lat, lon -> dialog.dismiss(); onPicked(name, lat, lon) }
+        }
+        goBtn.setOnClickListener { runSearch() }
+        searchInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) { runSearch(); true } else false
+        }
+        if (prefill.isNotEmpty()) runSearch()
+        else searchInput.post {
+            searchInput.requestFocus()
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    /** 카카오 키워드 검색 → 결과를 TMAP 스타일 행으로 resultList 에 채움 */
+    private fun performKeywordSearch(
+        query: String, resultList: LinearLayout, onPicked: (String, Double, Double) -> Unit
+    ) {
+        val night = isNightMode
+        resultList.removeAllViews()
+        resultList.addView(TextView(this).apply {
+            text = "검색 중..."; textSize = 14f; setPadding(dpToPx(24), dpToPx(20), dpToPx(24), dpToPx(20))
+            setTextColor(if (night) Color.parseColor("#999999") else Color.parseColor("#888888"))
+        })
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+                val conn = URL("https://dapi.kakao.com/v2/local/search/keyword.json?query=$encoded&size=15").openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"; conn.setRequestProperty("Authorization", "KakaoAK efc9f0b149f1b77d83d1b607ee60837d")
+                conn.connectTimeout = 8000; conn.readTimeout = 8000
+                if (conn.responseCode == 200) {
+                    val docs = JSONObject(conn.inputStream.bufferedReader().readText()).getJSONArray("documents")
+                    withContext(Dispatchers.Main) {
+                        resultList.removeAllViews()
+                        if (docs.length() == 0) {
+                            resultList.addView(TextView(this@MainActivity).apply {
+                                text = "검색 결과가 없습니다."; textSize = 14f
+                                setPadding(dpToPx(24), dpToPx(20), dpToPx(24), dpToPx(20))
+                                setTextColor(if (night) Color.parseColor("#999999") else Color.parseColor("#888888"))
+                            })
+                            return@withContext
+                        }
+                        for (i in 0 until docs.length()) {
+                            val d = docs.getJSONObject(i)
+                            val pname = d.optString("place_name", "")
+                            val addr  = d.optString("road_address_name", d.optString("address_name", ""))
+                            val cat   = d.optString("category_group_name", "").ifEmpty {
+                                d.optString("category_name", "").substringAfterLast(">").trim()
+                            }
+                            val lat = d.optDouble("y", 0.0); val lon = d.optDouble("x", 0.0)
+                            resultList.addView(buildSearchResultRow(query, pname, addr, cat, lat, lon, onPicked))
+                            resultList.addView(View(this@MainActivity).apply {
+                                setBackgroundColor(if (night) Color.parseColor("#2A2A38") else Color.parseColor("#EEEEEE"))
+                                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(1))
+                                    .apply { setMargins(dpToPx(16), 0, 0, 0) }
+                            })
+                        }
+                    }
+                } else withContext(Dispatchers.Main) {
+                    resultList.removeAllViews()
+                    Toast.makeText(this@MainActivity, "주소 검색에 실패했습니다.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    resultList.removeAllViews()
+                    Toast.makeText(this@MainActivity, "검색 오류: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    /** TMAP 스타일 결과 행 하나 생성 */
+    private fun buildSearchResultRow(
+        query: String, pname: String, addr: String, cat: String,
+        lat: Double, lon: Double, onPicked: (String, Double, Double) -> Unit
+    ): LinearLayout {
+        val night = isNightMode
+        val nameColor = if (night) Color.parseColor("#ECECEC") else Color.parseColor("#222222")
+        val highlight = Color.parseColor("#2E7D32")
+        val addrColor = Color.parseColor("#999999")
+        val metaColor = if (night) Color.parseColor("#888888") else Color.parseColor("#AAAAAA")
+        val pinColor  = Color.parseColor("#9AA5B1")
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            background = ResourcesCompat.getDrawable(resources, R.drawable.ripple_surface, theme)
+            setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            isClickable = true; isFocusable = true
+        }
+        row.addView(android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_location)
+            setColorFilter(pinColor)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(dpToPx(22), dpToPx(22)).apply { marginEnd = dpToPx(12); topMargin = dpToPx(2) }
+        })
+        val mid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        mid.addView(TextView(this).apply {
+            text = highlightQuery(pname, query, highlight, nameColor)
+            textSize = 17f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        if (addr.isNotEmpty()) {
+            mid.addView(TextView(this).apply {
+                text = addr; textSize = 13f; setTextColor(addrColor)
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = dpToPx(3) }
+            })
+        }
+        row.addView(mid)
+        val right = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = android.view.Gravity.END
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { marginStart = dpToPx(8) }
+        }
+        if (cat.isNotEmpty()) {
+            right.addView(TextView(this).apply {
+                text = cat; textSize = 12f; setTextColor(metaColor); gravity = android.view.Gravity.END
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+        }
+        val distStr = formatDistance(lat, lon)
+        if (distStr.isNotEmpty()) {
+            right.addView(TextView(this).apply {
+                text = distStr; textSize = 13f; setTextColor(metaColor); gravity = android.view.Gravity.END
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                    .apply { topMargin = dpToPx(3) }
+            })
+        }
+        row.addView(right)
+        row.setOnClickListener {
+            val name = pname.ifEmpty { addr }
+            if (lat != 0.0 && lon != 0.0) onPicked(name, lat, lon)
+            else Toast.makeText(this, "좌표를 가져올 수 없습니다.", Toast.LENGTH_SHORT).show()
+        }
+        return row
+    }
+
+    /** 검색어와 일치하는 부분을 강조색으로 칠한 SpannableString 반환 */
+    private fun highlightQuery(text: String, query: String, hlColor: Int, baseColor: Int): CharSequence {
+        val sp = android.text.SpannableString(text)
+        sp.setSpan(android.text.style.ForegroundColorSpan(baseColor), 0, text.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (query.isNotEmpty()) {
+            var idx = text.indexOf(query, ignoreCase = true)
+            while (idx >= 0) {
+                sp.setSpan(android.text.style.ForegroundColorSpan(hlColor), idx, idx + query.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sp.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), idx, idx + query.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                idx = text.indexOf(query, idx + query.length, ignoreCase = true)
+            }
+        }
+        return sp
+    }
+
+    /** 현재 위치에서 대상 좌표까지 거리를 "2.9km" / "850m" 형식으로 반환. 위치 없으면 빈 문자열. */
+    private fun formatDistance(lat: Double, lon: Double): String {
+        if (lat == 0.0 || lon == 0.0 || lastLat == 0.0 || lastLng == 0.0) return ""
+        val out = FloatArray(1)
+        android.location.Location.distanceBetween(lastLat, lastLng, lat, lon, out)
+        val m = out[0]
+        return if (m >= 1000f) String.format(Locale.US, "%.1fkm", m / 1000f) else "${m.toInt()}m"
+    }
+
+    /**
+     * 주소 검색 후 결과 리스트를 보여주고, 선택한 장소로 현재 위치 기반 내비를 시작한다.
+     */
+    @SuppressLint("MissingPermission")
+    private fun searchAddressForNavi(query: String) {
+        showTmapStyleSearchDialog(
+            titleHint = "목적지를 입력하세요",
+            prefill = query,
+            onPicked = { name, lat, lon ->
+                bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
+                Toast.makeText(this, "📍 '$name' 경로 안내 시작", Toast.LENGTH_SHORT).show()
+                startNavigationWithWGS84(name, lat, lon)
+            }
+        )
+    }
 
     private fun searchAddressAndShow(query: String, field: android.widget.EditText, coords: DoubleArray, onSelected: ((String) -> Unit)? = null) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -1920,6 +2333,7 @@ class MainActivity : BaseActivity(),
         currentNaviTripId = demoTripId
         currentStops.clear()
         visitedRestStopKeys.clear()
+        prealertedRestStopKeys.clear()
         autoCompleteTriggered = false
         currentStopPhase.clear()
         scenario.stops.forEach { stop ->

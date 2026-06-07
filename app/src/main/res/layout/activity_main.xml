@@ -153,28 +153,40 @@
             android:layout_marginBottom="6dp"
             android:background="@color/drag_handle"/>
 
-        <!-- 헤더: 타이틀 + 운행기록 버튼 -->
+        <!-- 헤더: 주소검색 + 타이틀 + 운행기록 버튼 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="16dp"
+            android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:paddingBottom="8dp">
 
-            <!-- 운행 기록 버튼 -->
+            <!-- 주소 검색 버튼 (좌측) -->
+            <ImageView
+                android:id="@+id/btnAddressSearch"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:src="@drawable/ic_search"
+                android:background="@null"
+                android:contentDescription="주소 검색"
+                android:clickable="true"
+                android:focusable="true"
+                android:padding="4dp" />
+
+            <!-- 운행 목록 타이틀 -->
             <TextView
-                android:layout_width="283dp"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:paddingStart="26dp"
                 android:text="@string/main_trip_list_title"
                 android:textColor="@color/text_primary"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
+            <!-- 운행 기록 버튼 (우측) -->
             <ImageView
                 android:id="@+id/btnTripHistory"
                 android:layout_width="30dp"
