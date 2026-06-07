@@ -66,7 +66,7 @@ abstract class BaseActivity : AppCompatActivity() {
 
             val content = intent.getStringExtra(ChatWebSocketService.EXTRA_MSG_CONTENT) ?: ""
             if (content.isNotEmpty()) {
-                Toast.makeText(this@BaseActivity, "💬 새 메시지: $content", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@BaseActivity, "💬채팅: $content", Toast.LENGTH_SHORT).show()
             }
         }
     }
