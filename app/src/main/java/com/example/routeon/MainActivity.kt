@@ -289,6 +289,9 @@ class MainActivity : BaseActivity(),
     private val expandedTripIds = mutableSetOf<String>()
     private val startedTripIds  = mutableSetOf<String>()   // 한 번이라도 안내를 시작한 배차(→ + 버튼 숨김 + "경로 재계산")
     private val currentStopPhase = mutableMapOf<String, String>()  // key=stop.id, value=phase (v1.0.76)
+    // 좌표("lat,lon" 반올림 키) → delivery_id. /optimize 응답 route 노드엔 delivery_id 가 없어서
+    // waypoints 의 delivery_id 를 좌표로 매핑해 두고 completeDelivery 시 조회한다.
+    private val deliveryIdByCoord = mutableMapOf<String, String>()
     private val tripOriginText  = mutableMapOf<String, String>()
     private val tripDestText    = mutableMapOf<String, String>()
     private val tripOriginCoords = mutableMapOf<String, DoubleArray>()
@@ -720,7 +723,8 @@ class MainActivity : BaseActivity(),
         }
 
         // ── 2. 최종 목적지 100m 이내 → 자동 운행 완료 ─────────────────────
-        if (!autoCompleteTriggered && currentNaviTripId != null) {
+        if (!autoCompleteTriggered && currentNaviTripId != null && false) {
+            // 자동 완료 비활성화: 최종 목적지도 아래 섹션 3의 "하차 완료" 버튼으로 명시 처리
             val destStop = currentStops.lastOrNull { it.type == "destination" }
                 ?: currentStops.lastOrNull()
             if (destStop != null) {
@@ -746,7 +750,8 @@ class MainActivity : BaseActivity(),
         var nearbyStop: RouteStop? = null
         var nearbyStopIndex: Int = -1
         for ((idx, stop) in currentStops.withIndex()) {
-            if (stop.type == "rest_stop" || stop.type == "destination") continue
+            if (stop.type == "rest_stop") continue
+            if (currentStopPhase[phaseKey(stop)] == "done") continue   // 이미 완료한 상차·하차지는 건너뜀
             val dist = FloatArray(1)
             android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, dist)
             if (dist[0] <= 100) { nearbyStop = stop; nearbyStopIndex = idx; break }
@@ -773,9 +778,13 @@ class MainActivity : BaseActivity(),
     // =========================================================================
 
     /** 상차지 단계 버튼 표시.
-     *  currentStopPhase 맵에 저장된 현재 단계에 따라 버튼 텍스트/색상/동작을 전환한다. */
+     *  currentStopPhase 맵의 키는 좌표 기반(phaseKey) — 상차·하차가 같은 delivery_id 를
+     *  공유해도 단계 상태가 섞이지 않도록 좌표로 구분한다. */
+    private fun phaseKey(stop: RouteStop): String = "${stop.type}_${coordKey(stop.lat, stop.lng)}"
+
     private fun showLoadingPhaseButton(stop: RouteStop, stopIdx: Int, tripId: String) {
-        val phase = currentStopPhase[stop.id] ?: "approaching"   // approaching → arrived → completed
+        val key = phaseKey(stop)
+        val phase = currentStopPhase[key] ?: "approaching"   // approaching → arrived → completed
         when (phase) {
             "approaching" -> {
                 // 처음 도착 시 — 상차지 도착 알림 버튼
@@ -787,7 +796,7 @@ class MainActivity : BaseActivity(),
                         sendTripProgress(tripId, phase = "loading_arrived", waypointIndex = stopIdx, event = "arrived")
                         Log.d("TripProgress", "📣 상차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
                     }
-                    currentStopPhase[stop.id] = "arrived"
+                    currentStopPhase[key] = "arrived"
                     showLoadingPhaseButton(stop, stopIdx, tripId)   // 즉시 버튼 갱신
                     Toast.makeText(this, "📣 상차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
                 }
@@ -799,18 +808,26 @@ class MainActivity : BaseActivity(),
                     android.content.res.ColorStateList.valueOf(Color.parseColor("#E65100"))
                 binding.btnCompleteTrip.setOnClickListener {
                     if (tripId.isNotEmpty()) {
+                        // 상차 완료는 단계 기록만 — completeDelivery(배송완료) 는 하차에서만 호출
+                        // (상차·하차가 같은 delivery_id 를 공유하므로 상차에서 complete 하면 운행이 조기 종료됨)
                         sendTripProgress(tripId, phase = "loading_completed", waypointIndex = stopIdx, event = "completed")
                         Log.d("TripProgress", "🚛 상차 완료 전송: ${stop.name} (wp=$stopIdx)")
                     }
-                    currentStopPhase.remove(stop.id)
-                    completeDelivery(stop.id, stop.name)
+                    currentStopPhase[key] = "done"   // 다시 표시되지 않도록 done 처리
+                    binding.btnCompleteTrip.visibility = View.GONE
+                    Toast.makeText(this, "🚛 상차가 완료되었습니다. 하차지로 이동하세요.", Toast.LENGTH_SHORT).show()
                 }
+            }
+            "done" -> {
+                // 상차 완료된 상차지 — 버튼 숨김 (재접근 시 재표시 안 함)
+                binding.btnCompleteTrip.visibility = View.GONE
             }
         }
     }
 
     private fun showUnloadingPhaseButton(stop: RouteStop, stopIdx: Int, tripId: String) {
-        val phase = currentStopPhase[stop.id] ?: "approaching"
+        val key = phaseKey(stop)
+        val phase = currentStopPhase[key] ?: "approaching"
         when (phase) {
             "approaching" -> {
                 // 처음 도착 시 — 하차지 도착 알림 버튼
@@ -822,24 +839,38 @@ class MainActivity : BaseActivity(),
                         sendTripProgress(tripId, phase = "unloading_arrived", waypointIndex = stopIdx, event = "arrived")
                         Log.d("TripProgress", "📣 하차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
                     }
-                    currentStopPhase[stop.id] = "arrived"
+                    currentStopPhase[key] = "arrived"
                     showUnloadingPhaseButton(stop, stopIdx, tripId)
                     Toast.makeText(this, "📣 하차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
                 }
             }
             "arrived" -> {
                 // 도착 확인 후 — 하차 완료 버튼
-                binding.btnCompleteTrip.text = "${getString(R.string.navi_btn_complete_delivery)} (${stop.name})"
+                val isFinalDest = stop.type == "destination"
+                binding.btnCompleteTrip.text = if (isFinalDest)
+                    "🏁 하차 완료 + 운행 종료 (${stop.name})"
+                else
+                    "${getString(R.string.navi_btn_complete_delivery)} (${stop.name})"
                 binding.btnCompleteTrip.backgroundTintList =
-                    android.content.res.ColorStateList.valueOf(Color.parseColor("#0288D1"))
+                    android.content.res.ColorStateList.valueOf(Color.parseColor(if (isFinalDest) "#1B5E20" else "#0288D1"))
                 binding.btnCompleteTrip.setOnClickListener {
                     if (tripId.isNotEmpty()) {
                         sendTripProgress(tripId, phase = "unloading_completed", waypointIndex = stopIdx, event = "completed")
-                        Log.d("TripProgress", "📦 하차 완료 전송: ${stop.name} (wp=$stopIdx)")
+                        Log.d("TripProgress", "📦 하차 완료 전송: ${stop.name} (wp=$stopIdx, final=$isFinalDest)")
                     }
-                    currentStopPhase.remove(stop.id)
+                    currentStopPhase[key] = "done"
                     completeDelivery(stop.id, stop.name)
+                    // 최종 목적지면 하차 완료 후 운행 자체를 완료 처리
+                    if (isFinalDest && tripId.isNotEmpty()) {
+                        suppressCompleteSoundOnce = true   // processTripsUpdate 중복 음향 차단
+                        playSequential(R.raw.bell, R.raw.trip_complite)
+                        updateTripStatus(tripId, "completed")
+                    }
                 }
+            }
+            "done" -> {
+                // 하차 완료된 하차지 — 버튼 숨김 (재접근 시 재표시 안 함)
+                binding.btnCompleteTrip.visibility = View.GONE
             }
         }
     }
@@ -1060,6 +1091,23 @@ class MainActivity : BaseActivity(),
     }
 
     private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
+
+    /** 좌표 반올림 기반 delivery_id 매핑 키 (5자리 ≈ 1m 정밀도) */
+    private fun coordKey(lat: Double, lon: Double): String =
+        String.format(Locale.US, "%.5f,%.5f", lat, lon)
+
+    /** trip waypoints 에서 좌표→delivery_id 매핑을 채운다. 안내/재계산 시작 시 호출. */
+    private fun cacheDeliveryIds(waypointsArr: JSONArray?) {
+        if (waypointsArr == null) return
+        for (i in 0 until waypointsArr.length()) {
+            val wp = waypointsArr.getJSONObject(i)
+            val did = wp.optString("delivery_id", "")
+            if (did.isEmpty() || did == "null") continue
+            val lat = wp.optDouble("lat", 0.0)
+            val lon = wp.optDouble("lon", wp.optDouble("lng", 0.0))
+            if (lat != 0.0 && lon != 0.0) deliveryIdByCoord[coordKey(lat, lon)] = did
+        }
+    }
 
     private fun makeChip(label: String, textHex: String, bgHex: String): TextView {
         return TextView(this).apply {
@@ -1490,6 +1538,7 @@ class MainActivity : BaseActivity(),
                         if (hasStarted) {
                             // ── 경로 재계산: 현재 위치 기준으로 /optimize 재요청 (출발지·목적지는 서버 자동 결정) ──
                             startedTripIds.add(tripId)
+                            cacheDeliveryIds(waypointsArr)
                             currentNaviTripId = tripId
                             bottomSheetBehavior?.state = BottomSheetBehavior.STATE_COLLAPSED
                             fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
@@ -1503,6 +1552,7 @@ class MainActivity : BaseActivity(),
                             return@setOnClickListener
                         }
                         startedTripIds.add(tripId)
+                        cacheDeliveryIds(waypointsArr)
                         val originText = (tripOriginText[tripId] ?: "").trim()
                         val destText   = (tripDestText[tripId] ?: "").trim()
                         // 기사가 검색으로 목적지 좌표까지 확정한 경우에만 userProvidedDest = true
@@ -1744,7 +1794,9 @@ class MainActivity : BaseActivity(),
                 val name = pt.optString("name", "경유지${i+1}")
                 val lat  = pt.optDouble("lat", 0.0)
                 val lng  = pt.optDouble("lon", pt.optDouble("lng", 0.0))
+                // delivery_id: route 노드에 있으면 사용, 없으면 좌표로 waypoints 매핑에서 조회
                 val did  = pt.optString("delivery_id", pt.optString("id", ""))
+                    .let { if (it.isEmpty() || it == "null") (deliveryIdByCoord[coordKey(lat, lng)] ?: "") else it }
                 if (rawType != "origin") currentStops.add(RouteStop(did, name, lat, lng, effectiveType))
                 when (rawType) {
                     "loading","unloading","waypoint","rest_stop" -> convertWGS84ToKATEC(lat, lng)?.let { vias.add(KNPOI(name, it.first, it.second, "")) }
