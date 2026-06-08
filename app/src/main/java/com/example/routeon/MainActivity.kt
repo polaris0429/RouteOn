@@ -794,11 +794,11 @@ class MainActivity : BaseActivity(),
                 binding.btnCompleteTrip.setOnClickListener {
                     if (tripId.isNotEmpty()) {
                         sendTripProgress(tripId, phase = "loading_arrived", waypointIndex = stopIdx, event = "arrived")
-                        Log.d("TripProgress", "📣 상차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
+                        Log.d("TripProgress", "상차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
                     }
                     currentStopPhase[key] = "arrived"
                     showLoadingPhaseButton(stop, stopIdx, tripId)   // 즉시 버튼 갱신
-                    Toast.makeText(this, "📣 상차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "상차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
                 }
             }
             "arrived" -> {
@@ -811,11 +811,11 @@ class MainActivity : BaseActivity(),
                         // 상차 완료는 단계 기록만 — completeDelivery(배송완료) 는 하차에서만 호출
                         // (상차·하차가 같은 delivery_id 를 공유하므로 상차에서 complete 하면 운행이 조기 종료됨)
                         sendTripProgress(tripId, phase = "loading_completed", waypointIndex = stopIdx, event = "completed")
-                        Log.d("TripProgress", "🚛 상차 완료 전송: ${stop.name} (wp=$stopIdx)")
+                        Log.d("TripProgress", "상차 완료 전송: ${stop.name} (wp=$stopIdx)")
                     }
                     currentStopPhase[key] = "done"   // 다시 표시되지 않도록 done 처리
                     binding.btnCompleteTrip.visibility = View.GONE
-                    Toast.makeText(this, "🚛 상차가 완료되었습니다. 하차지로 이동하세요.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "상차가 완료되었습니다. 하차지로 이동하세요.", Toast.LENGTH_SHORT).show()
                 }
             }
             "done" -> {
@@ -831,17 +831,17 @@ class MainActivity : BaseActivity(),
         when (phase) {
             "approaching" -> {
                 // 처음 도착 시 — 하차지 도착 알림 버튼
-                binding.btnCompleteTrip.text = "📣 하차지 도착 알림 (${stop.name})"
+                binding.btnCompleteTrip.text = "하차지 도착 알림 (${stop.name})"
                 binding.btnCompleteTrip.backgroundTintList =
                     android.content.res.ColorStateList.valueOf(Color.parseColor("#0277BD"))
                 binding.btnCompleteTrip.setOnClickListener {
                     if (tripId.isNotEmpty()) {
                         sendTripProgress(tripId, phase = "unloading_arrived", waypointIndex = stopIdx, event = "arrived")
-                        Log.d("TripProgress", "📣 하차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
+                        Log.d("TripProgress", "하차지 도착 알림 전송: ${stop.name} (wp=$stopIdx)")
                     }
                     currentStopPhase[key] = "arrived"
                     showUnloadingPhaseButton(stop, stopIdx, tripId)
-                    Toast.makeText(this, "📣 하차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "하차지 도착이 확인되었습니다.", Toast.LENGTH_SHORT).show()
                 }
             }
             "arrived" -> {
@@ -856,7 +856,7 @@ class MainActivity : BaseActivity(),
                 binding.btnCompleteTrip.setOnClickListener {
                     if (tripId.isNotEmpty()) {
                         sendTripProgress(tripId, phase = "unloading_completed", waypointIndex = stopIdx, event = "completed")
-                        Log.d("TripProgress", "📦 하차 완료 전송: ${stop.name} (wp=$stopIdx, final=$isFinalDest)")
+                        Log.d("TripProgress", "하차 완료 전송: ${stop.name} (wp=$stopIdx, final=$isFinalDest)")
                     }
                     currentStopPhase[key] = "done"
                     completeDelivery(stop.id, stop.name)

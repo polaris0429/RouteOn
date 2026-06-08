@@ -70,6 +70,14 @@ class ChatActivity : BaseActivity() {
                 if (messages.none { it.id == msgId && msgId.isNotEmpty() }) {
                     addReceivedMessageUI(content, msgId, isoToHHmm(createdAt))
                     myConvId?.let { markRead(it, msgId) }
+                    // 실제 관리자 메시지 수신 → 웰컴 메시지 표시 기록 초기화
+                    // (다음 6시간 카운트가 이 메시지 이후부터 새로 시작되도록)
+                    myConvId?.let {
+                        getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE).edit()
+                            .remove(PREF_WELCOME_SHOWN_CONV)
+                            .remove(PREF_WELCOME_SHOWN_AT)
+                            .apply()
+                    }
                 }
             } else {
                 // content 파싱 실패 시 최신 메시지 한 건 직접 조회
@@ -299,9 +307,12 @@ class ChatActivity : BaseActivity() {
     // 서버에 전송되지 않고 앱 화면에만 표시되는 메시지임을 명시하기 위해
     // id 접두어로 "local_" 을 사용한다. (서버 UUID와 충돌 없음)
     companion object {
-        private const val LOCAL_ID_WELCOME   = "local_welcome"
-        private const val LOCAL_ID_AUTO_REPLY = "local_auto_reply"
-        private const val SIX_HOURS_MS = 6 * 60 * 60 * 1000L
+        private const val LOCAL_ID_WELCOME    = "local_welcome"
+        private const val LOCAL_ID_AUTO_REPLY  = "local_auto_reply"
+        private const val SIX_HOURS_MS         = 6 * 60 * 60 * 1000L
+        // ChatPrefs 에 저장: 웰컴 메시지를 마지막으로 표시한 conversation_id + 절대 시각(ms)
+        private const val PREF_WELCOME_SHOWN_CONV = "welcome_shown_conv_id"
+        private const val PREF_WELCOME_SHOWN_AT   = "welcome_shown_at_ms"
     }
 
     /**
@@ -309,26 +320,33 @@ class ChatActivity : BaseActivity() {
      * - 히스토리가 비어 있거나
      * - 마지막 메시지가 6시간 이상 지난 경우
      * → 앱 전용 웰컴 메시지를 UI에만 추가한다.
+     *
+     * [수정] 채팅화면을 나갔다 돌아와도 중복 표시되지 않도록,
+     * 웰컴 메시지를 표시한 시각과 conversation_id를 ChatPrefs에 영속 저장한다.
+     * 같은 conversation_id에서 이미 6시간 경과 조건으로 표시한 적이 있다면
+     * 화면 재진입 시에도 다시 추가하지 않는다.
      */
     private fun maybeShowWelcomeMessage() {
-        // 이미 웰컴 메시지가 표시된 경우 중복 추가 방지
-        if (messages.any { it.id == LOCAL_ID_WELCOME }) return
+        val myConvId = conversationId ?: return
+        val chatPrefs = getSharedPreferences("ChatPrefs", Context.MODE_PRIVATE)
 
-        val shouldShow = messages.isEmpty() || run {
-            // 마지막 실제 서버 메시지의 타임스탬프 계산
-            val lastServer = messages.lastOrNull { !it.id.startsWith("local_") }
-            if (lastServer == null) {
-                true
-            } else {
-                // timestampMs 가 0 이면(히스토리 로드분) time 문자열로 경과 추정 불가 → 서버 id 로 판별
-                // 여기서는 현재 시각과 비교할 절대 시간이 없으므로,
-                // 히스토리의 마지막 메시지 created_at 을 별도 필드에 저장해 사용한다.
-                lastServerMessageTimeMs > 0 &&
-                (System.currentTimeMillis() - lastServerMessageTimeMs) >= SIX_HOURS_MS
-            }
+        // ① 이미 이 대화방에서 웰컴 메시지를 표시한 적 있는지 확인
+        val shownConv  = chatPrefs.getString(PREF_WELCOME_SHOWN_CONV, null)
+        val shownAtMs  = chatPrefs.getLong(PREF_WELCOME_SHOWN_AT, 0L)
+        if (shownConv == myConvId && shownAtMs > 0L) {
+            // 이미 표시했으므로 UI에도 추가하지 않음
+            Log.d("ChatActivity", "웰컴 메시지 이미 표시됨 (conv=$myConvId at=$shownAtMs) — 재추가 생략")
+            return
+        }
+
+        // ② 표시 조건 판단
+        val shouldShow = messages.none { !it.id.startsWith("local_") } || run {
+            lastServerMessageTimeMs > 0 &&
+            (System.currentTimeMillis() - lastServerMessageTimeMs) >= SIX_HOURS_MS
         }
 
         if (shouldShow) {
+            // ③ UI에 추가
             val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
             messages.add(
                 ChatMessage(
@@ -341,6 +359,13 @@ class ChatActivity : BaseActivity() {
             )
             adapter.notifyItemInserted(messages.size - 1)
             recycler.scrollToPosition(messages.size - 1)
+
+            // ④ 표시 기록 저장 → 화면 재진입 시 재표시 방지
+            chatPrefs.edit()
+                .putString(PREF_WELCOME_SHOWN_CONV, myConvId)
+                .putLong(PREF_WELCOME_SHOWN_AT, System.currentTimeMillis())
+                .apply()
+            Log.d("ChatActivity", "웰컴 메시지 표시 및 저장 (conv=$myConvId)")
         }
     }
 
