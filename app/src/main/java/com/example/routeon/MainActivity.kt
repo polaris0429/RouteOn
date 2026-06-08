@@ -153,9 +153,10 @@ class MainActivity : BaseActivity(),
     private var isRestStopActive = false
     private var restStopCountDown: CountDownTimer? = null
     private val visitedRestStopKeys = mutableSetOf<String>()
-    private val REST_STOP_RADIUS_M = 150f
-    private val REST_STOP_PREALERT_M = 500f      // 이 반경 이내 접근 시 사전 알림(bell→rest) 1회 재생
-    private val REST_STOP_EXIT_RADIUS_M = 200f   // 이 반경 벗어나면 휴식 강제 취소
+    private val REST_STOP_RADIUS_M = 1000f       // 진입(휴식 화면) 반경
+    private val REST_STOP_PREALERT_M = 1000f      // 이 반경 이내 접근 시 사전 알림(bell→rest) 1회 재생
+    private val REST_STOP_EXIT_RADIUS_M = 1000f   // 이 반경 벗어나면 휴식 강제 취소
+    private val STOP_PROXIMITY_M = 1000f          // 상차·하차지 도착 판정 반경
     private val REST_STOP_DURATION_MS = 15 * 60 * 1000L
     private val REST_STOP_DEMO_DURATION_MS = 10 * 1000L
     private val prealertedRestStopKeys = mutableSetOf<String>()   // 사전 알림 이미 울린 휴게소 (중복 방지)
@@ -687,13 +688,13 @@ class MainActivity : BaseActivity(),
                 val key = "${stop.lat}_${stop.lng}"
                 val dist = FloatArray(1)
                 android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, dist)
-                // ─ 사전 알림: 500m 이내 접근 시 bell→rest 1회 재생 (휴식 화면은 아직 안 뜸) ─
+                // ─ 사전 알림: 접근 시 bell→rest 1회 재생 (휴식 화면은 아직 안 뜸) ─
                 if (dist[0] <= REST_STOP_PREALERT_M && key !in prealertedRestStopKeys && key !in visitedRestStopKeys) {
                     prealertedRestStopKeys.add(key)
                     Log.d("RestStop", "🔔 휴게소 사전 알림: ${stop.name} (${dist[0].toInt()}m 전방)")
                     runOnUiThread { playSounds(R.raw.bell, R.raw.rest) }
                 }
-                // ─ 150m 이내 진입 → 휴식 화면 표시 (사운드 없음) ─
+                // ─ 진입 → 휴식 화면 표시 (사운드 없음) ─
                 if (key in visitedRestStopKeys) continue
                 if (dist[0] <= REST_STOP_RADIUS_M) {
                     visitedRestStopKeys.add(key)
@@ -754,7 +755,7 @@ class MainActivity : BaseActivity(),
             if (currentStopPhase[phaseKey(stop)] == "done") continue   // 이미 완료한 상차·하차지는 건너뜀
             val dist = FloatArray(1)
             android.location.Location.distanceBetween(currentLat, currentLng, stop.lat, stop.lng, dist)
-            if (dist[0] <= 100) { nearbyStop = stop; nearbyStopIndex = idx; break }
+            if (dist[0] <= STOP_PROXIMITY_M) { nearbyStop = stop; nearbyStopIndex = idx; break }
         }
         runOnUiThread {
             if (nearbyStop != null) {
