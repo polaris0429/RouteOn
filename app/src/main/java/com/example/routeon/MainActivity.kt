@@ -789,7 +789,7 @@ class MainActivity : BaseActivity(),
         when (phase) {
             "approaching" -> {
                 // 처음 도착 시 — 상차지 도착 알림 버튼
-                binding.btnCompleteTrip.text = "📣 상차지 도착 알림 (${stop.name})"
+                binding.btnCompleteTrip.text = "상차지 도착 (${stop.name})"
                 binding.btnCompleteTrip.backgroundTintList =
                     android.content.res.ColorStateList.valueOf(Color.parseColor("#F57C00"))
                 binding.btnCompleteTrip.setOnClickListener {
@@ -832,7 +832,7 @@ class MainActivity : BaseActivity(),
         when (phase) {
             "approaching" -> {
                 // 처음 도착 시 — 하차지 도착 알림 버튼
-                binding.btnCompleteTrip.text = "하차지 도착 알림 (${stop.name})"
+                binding.btnCompleteTrip.text = "하차지 도착 (${stop.name})"
                 binding.btnCompleteTrip.backgroundTintList =
                     android.content.res.ColorStateList.valueOf(Color.parseColor("#0277BD"))
                 binding.btnCompleteTrip.setOnClickListener {
@@ -1170,18 +1170,23 @@ class MainActivity : BaseActivity(),
             val cargoParts = mutableListOf<String>()
             if (recipient.isNotEmpty()) cargoParts.add("\uD83D\uDC64 $recipient")            // 화주(고객)
             if (cargo.isNotEmpty())     cargoParts.add("\uD83D\uDCE6 $cargo")                // 화물종류
-            // 무게: cargo_weight_ton 우선, 없으면 cargo_size 문자열 그대로 표시
-            when {
-                ton > 0.0          -> cargoParts.add("\u2696\uFE0F " + getString(R.string.navi_cargo_ton, formatTon(ton)))
-                cargoSize.isNotEmpty() -> cargoParts.add("\u2696\uFE0F $cargoSize")
+            // cargo_size + cargo_weight_ton 함께 표시 (ℹ️ 이모지 사용)
+            val sizeAndTon = buildString {
+                if (cargoSize.isNotEmpty()) append(cargoSize)
+                if (ton > 0.0) {
+                    if (isNotEmpty()) append("   ")
+                    append(getString(R.string.navi_cargo_ton, formatTon(ton)))
+                }
             }
+            if (sizeAndTon.isNotEmpty()) cargoParts.add("\u2139\uFE0F $sizeAndTon")
 
-            // 연락정보 줄 (v1.0.76)
+            // 연락정보 줄 (v1.0.76) — shipper_phone == contact_phone 이면 중복 표시 제거
             val contactParts = mutableListOf<String>()
             if (shipperName.isNotEmpty())  contactParts.add("🏢 화주: $shipperName")
             if (shipperPhone.isNotEmpty()) contactParts.add("📞 $shipperPhone")
             if (contactName.isNotEmpty())  contactParts.add("👷 담당자: $contactName")
-            if (contactPhone.isNotEmpty()) contactParts.add("📱 $contactPhone")
+            // contact_phone 이 shipper_phone 과 다를 때만 추가 (중복 방지)
+            if (contactPhone.isNotEmpty() && contactPhone != shipperPhone) contactParts.add("📱 $contactPhone")
 
             names.add(name)
             infos.add(cargoParts.joinToString("   "))
